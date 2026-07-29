@@ -29,6 +29,7 @@ import com.einkphoto.app.ui.model.AppDestination
 import com.einkphoto.app.ui.screens.FeaturePlaceholderScreen
 import com.einkphoto.app.ui.settings.NetworkSettingsScreen
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
+import kotlinx.coroutines.delay
 
 @Composable
 fun EInkPhotoApp() = EInkPhotoTheme {
@@ -43,7 +44,17 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
     val snapshot by session.snapshot.collectAsState()
     val localAlbumRuntime = rememberLocalAlbumDemoRuntime(session)
     val networkRepository = remember { LanNetworkRepository() }
-    LaunchedEffect(session) { session.refreshSnapshot() }
+    // The badge is device state, not an optimistic network label.  Keep it
+    // current while this composition is alive so powering off the frame (or
+    // losing either AP or STA reachability) clears a stale "connected" badge.
+    // LanDeviceSession only publishes Online after the health, capability and
+    // status handshake all succeed; any failed heartbeat becomes Offline.
+    LaunchedEffect(session) {
+        while (true) {
+            session.refreshSnapshot()
+            delay(8_000L)
+        }
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),

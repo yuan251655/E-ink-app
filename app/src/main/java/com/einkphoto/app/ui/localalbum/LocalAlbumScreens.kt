@@ -74,6 +74,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.einkphoto.app.core.device.DeviceCommandResult
+import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.core.device.DeviceJob
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.DeviceJobState
@@ -240,7 +241,11 @@ internal fun LocalAlbumOverviewScreen(
                 SectionTitle("最近图片")
                 OutlinedCard {
                     Text(
-                        "还没有保存的照片",
+                        if (state.device.connection == DeviceConnectionState.Online) {
+                            "TF 卡中还没有保存的照片"
+                        } else {
+                            "暂时无法读取 TF 卡信息：相框未连接或设备没有响应"
+                        },
                         modifier = Modifier.padding(16.dp),
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

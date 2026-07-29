@@ -8,6 +8,7 @@ uses Connection: close because the ESP HTTP server is single-client sensitive.
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from os import environ
 from pathlib import Path
+from threading import Lock
 from time import monotonic
 from urllib.error import HTTPError, URLError
 from urllib.request import ProxyHandler, Request, build_opener
@@ -16,6 +17,9 @@ TARGET = environ.get("EINK_DEVICE_URL", "http://192.168.145.12").rstrip("/")
 PORT = int(environ.get("EINK_PROXY_PORT", "8080"))
 NO_PROXY = build_opener(ProxyHandler({}))
 LOG_PATH = Path(environ.get("EINK_PROXY_LOG", Path(__file__).with_name("emulator_device_proxy.log")))
+# The ESP server handles one request reliably at a time. Serialize bridge
+# forwarding so concurrent heartbeats and media reads cannot clog it.
+DEVICE_REQUEST_LOCK = Lock()
 
 
 def log(message):
@@ -37,7 +41,7 @@ class Forwarder(BaseHTTPRequestHandler):
                 if name.lower() not in {"host", "content-length", "connection"}:
                     request.add_header(name, value)
             request.add_header("Connection", "close")
-            with NO_PROXY.open(request, timeout=130) as response:
+            with DEVICE_REQUEST_LOCK, NO_PROXY.open(request, timeout=130) as response:
                 data = response.read()
                 self._reply(response.status, response.headers.items(), data)
                 log(f"{self.command} {self.path} -> {response.status} {len(data)}B {monotonic() - started:.3f}s")

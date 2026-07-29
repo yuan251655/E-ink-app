@@ -72,14 +72,10 @@ data class DeviceMediaSource(
     val cachedFile: File,
 )
 
-/** Fully validated, App-private files used for one `source_plus_bin` admission request. */
+/** Fully validated App-private BIN used for one compact `metadata + image_bin` admission request. */
 data class DeviceMediaUploadRequest(
     val requestId: String,
     val displayName: String,
-    val sourceFile: File,
-    val sourceMimeType: String,
-    val sourceSizeBytes: Long,
-    val sourceSha256: String,
     val imageBinFile: File,
     val imageBinSizeBytes: Long,
     val imageBinSha256: String,

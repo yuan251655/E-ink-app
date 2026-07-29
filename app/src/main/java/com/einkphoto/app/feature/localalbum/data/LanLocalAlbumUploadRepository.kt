@@ -1,7 +1,6 @@
 package com.einkphoto.app.feature.localalbum.data
 
 import android.content.Context
-import android.net.Uri
 import com.einkphoto.app.core.device.DeviceCommandResult
 import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.core.device.DeviceMediaDisplayProfile
@@ -17,17 +16,11 @@ import java.security.MessageDigest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 
-/** Writes a verified phone-private source + candidate BIN through the frozen phase-0 contract. */
+/** Writes a compact converted preview + candidate BIN; camera originals never leave the phone. */
 class LanLocalAlbumUploadRepository(
     private val context: Context,
     private val transport: LanDeviceTransport = HttpLanDeviceTransport(),
 ) : UploadRepository {
-    private companion object {
-        // Firmware accepts at most 5 MiB of original-image bytes; the remaining
-        // request budget is reserved for the fixed 192 KiB display frame and metadata.
-        const val MAX_SOURCE_BYTES = 5L * 1024L * 1024L
-    }
-
     override suspend fun submit(
         draft: ConversionDraft,
         mode: UploadMode,
@@ -37,14 +30,16 @@ class LanLocalAlbumUploadRepository(
             return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
         }
         if (requestId.isBlank()) return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
-        val sourceFile = privateFileFromUri(draft.source.contentUri) ?: return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
-        val binFile = privateFileFromUri(draft.candidateBinUri ?: return DeviceCommandResult.Rejected(DeviceRejection.Unsupported))
+        val capabilities = when (val result = transport.capabilities()) {
+            is LanTransportResult.Success -> result.value
+            is LanTransportResult.Failure -> return DeviceCommandResult.Rejected(result.rejection)
+        }
+        // Older preview_plus_bin/source_plus_bin firmware must not receive a payload that it
+        // cannot atomically admit. The App does not silently send a preview/source fallback.
+        if (!capabilities.supportsSourceAndBinUpload) return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
+        val binFile = privateBinFileFromUri(draft.candidateBinUri ?: return DeviceCommandResult.Rejected(DeviceRejection.Unsupported))
             ?: return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
-        val sourceMimeType = mimeTypeFor(sourceFile.name) ?: return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
-        if (binFile.length() != 192_000L || sourceFile.length() <= 0L) return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
-        // Reject locally before opening the HTTP request.  Without this guard, a
-        // 71 MB phone photo is streamed over Wi-Fi only for the ESP to reject it.
-        if (sourceFile.length() > MAX_SOURCE_BYTES) return DeviceCommandResult.Rejected(DeviceRejection.SourceTooLarge)
+        if (binFile.length() != 192_000L) return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
 
         val sourceStartsLandscape = draft.source.widthPx >= draft.source.heightPx
         val sourceEndsLandscape = if (draft.quarterTurnsClockwise % 2 == 0) {
@@ -55,10 +50,6 @@ class LanLocalAlbumUploadRepository(
         val request = DeviceMediaUploadRequest(
             requestId = requestId.take(64),
             displayName = safeDisplayName(draft.source.displayName),
-            sourceFile = sourceFile,
-            sourceMimeType = sourceMimeType,
-            sourceSizeBytes = sourceFile.length(),
-            sourceSha256 = sha256(sourceFile),
             imageBinFile = binFile,
             imageBinSizeBytes = binFile.length(),
             imageBinSha256 = sha256(binFile),
@@ -125,18 +116,12 @@ class LanLocalAlbumUploadRepository(
         error("unreachable")
     }
 
-    private fun privateFileFromUri(rawUri: String): File? = runCatching {
-        val file = File(requireNotNull(Uri.parse(rawUri).path)).canonicalFile
+    private fun privateBinFileFromUri(rawUri: String): File? = runCatching {
+        val file = File(requireNotNull(android.net.Uri.parse(rawUri).path)).canonicalFile
         val privateRoot = context.filesDir.canonicalFile.path + File.separator
         require(file.path.startsWith(privateRoot) && file.isFile) { "source is not an App-private file" }
         file
     }.getOrNull()
-
-    private fun mimeTypeFor(filename: String): String? = when (filename.substringAfterLast('.', "").lowercase()) {
-        "jpg", "jpeg" -> "image/jpeg"
-        "png" -> "image/png"
-        else -> null
-    }
 
     private fun safeDisplayName(value: String): String = value
         .replace('/', '_').replace('\\', '_')

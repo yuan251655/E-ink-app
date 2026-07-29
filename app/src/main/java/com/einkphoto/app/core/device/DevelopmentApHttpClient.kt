@@ -17,6 +17,11 @@ class DevelopmentApHttpClient {
     private val baseUrl: String get() = DeviceEndpointConfig.apiBaseUrl
     suspend fun get(path: String): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
+            // Reading the TF-backed media index can take noticeably longer
+            // than the small health/status JSON responses, especially just
+            // after an e-paper refresh. Do not let a valid, late list reply
+            // turn an existing TF gallery into an empty App screen.
+            val readTimeoutMs = if (path.startsWith("/api/v1/media?")) 30_000 else 12_000
             var lastError: Throwable? = null
             for (attempt in 0..2) {
                 try {
@@ -24,7 +29,7 @@ class DevelopmentApHttpClient {
                     // The ESP may take several seconds to re-open its single HTTP slot after a
                     // TF transaction. Three seconds turned a valid, late 200 response into a
                     // false "offline" result before batch upload could even start.
-                    requestMethod = "GET"; connectTimeout = 8_000; readTimeout = 12_000
+                    requestMethod = "GET"; connectTimeout = 8_000; readTimeout = readTimeoutMs
                     setRequestProperty("Connection", "close")
                 }
                 try {
@@ -125,29 +130,20 @@ class DevelopmentApHttpClient {
     } }
 
     /**
-     * Frozen phase-0 multipart contract: metadata -> source -> image_bin.
-     * Files are streamed from App-private storage; no device path or old media DTO is sent.
+     * Compact multipart contract: metadata -> image_bin. Preview/source files are phone-only;
+     * the device uses the fixed 4bpp frame and App can later decode its preview endpoint.
      */
-    suspend fun uploadSourcePlusBin(request: DeviceMediaUploadRequest): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+    suspend fun uploadBinOnly(request: DeviceMediaUploadRequest): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             val startedAt = android.os.SystemClock.elapsedRealtime()
-            require(request.sourceFile.isFile && request.imageBinFile.isFile) { "upload files are unavailable" }
-            require(request.sourceSizeBytes == request.sourceFile.length()) { "source size changed" }
+            require(request.imageBinFile.isFile) { "BIN file is unavailable" }
             require(request.imageBinSizeBytes == request.imageBinFile.length() && request.imageBinSizeBytes == 192_000L) { "BIN size changed" }
-            require(request.sourceMimeType == "image/jpeg" || request.sourceMimeType == "image/png") { "unsupported source MIME type" }
             val boundary = "EinkPhoto-${System.currentTimeMillis()}"
             val metadata = JSONObject()
                 .put("request_id", request.requestId)
                 .put("category", "local")
-                .put("upload_mode", "source_plus_bin")
+                .put("upload_mode", "bin_only")
                 .put("display_name", request.displayName)
-                .put("source", JSONObject()
-                    .put("mime_type", request.sourceMimeType)
-                    .put("size_bytes", request.sourceSizeBytes)
-                    // Current product firmware consumes `bytes`; retain it as a transition alias
-                    // while keeping the frozen `size_bytes` field for the App/ESP contract.
-                    .put("bytes", request.sourceSizeBytes)
-                    .put("sha256", request.sourceSha256))
                 .put("image_bin", JSONObject()
                     .put("size_bytes", request.imageBinSizeBytes)
                     .put("bytes", request.imageBinSizeBytes)
@@ -165,11 +161,9 @@ class DevelopmentApHttpClient {
                 .toString()
                 .toByteArray(StandardCharsets.UTF_8)
             val metadataHeader = multipartHeader(boundary, "metadata", "metadata.json", "application/json")
-            val sourceHeader = multipartHeader(boundary, "source", safeFilename(request.sourceFile.name), request.sourceMimeType)
             val binHeader = multipartHeader(boundary, "image_bin", "image.bin", "application/octet-stream")
             val closing = "\r\n--$boundary--\r\n".toByteArray(StandardCharsets.UTF_8)
-            val contentLength = metadataHeader.size.toLong() + metadata.size + 2L +
-                sourceHeader.size + request.sourceSizeBytes + 2L + binHeader.size + request.imageBinSizeBytes + closing.size
+            val contentLength = metadataHeader.size.toLong() + metadata.size + 2L + binHeader.size + request.imageBinSizeBytes + closing.size
             val connection = (URL(baseUrl + "/api/v1/media/upload").openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
@@ -182,7 +176,6 @@ class DevelopmentApHttpClient {
             try {
                 connection.outputStream.buffered(16 * 1024).use { output ->
                     output.write(metadataHeader); output.write(metadata); output.write("\r\n".toByteArray(StandardCharsets.UTF_8))
-                    output.write(sourceHeader); request.sourceFile.inputStream().buffered(16 * 1024).use { it.copyTo(output, 16 * 1024) }; output.write("\r\n".toByteArray(StandardCharsets.UTF_8))
                     output.write(binHeader); request.imageBinFile.inputStream().buffered(16 * 1024).use { it.copyTo(output, 16 * 1024) }
                     output.write(closing)
                 }
@@ -314,7 +307,9 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         onSuccess = { root ->
             val data = root.getJSONObject("data")
             val modes = data.optJSONArray("media_upload_modes")
-            val sourceAndBin = (0 until (modes?.length() ?: 0)).any { modes?.optString(it) == "source_plus_bin" }
+            // The legacy model name remains for binary compatibility, but its value now means
+            // the only App-supported compact admission mode: metadata + image_bin.
+            val sourceAndBin = (0 until (modes?.length() ?: 0)).any { modes?.optString(it) == "bin_only" }
             LanTransportResult.Success(DeviceCapabilities(
                 displayProfile = DisplayProfile(
                     widthPx = data.optInt("display_width", 800).coerceAtLeast(1),
@@ -325,7 +320,7 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
                 ),
                 supportsSourceOnlyUpload = (0 until (modes?.length() ?: 0)).any { modes?.optString(it) == "source_only" },
                 supportsSourceAndBinUpload = sourceAndBin,
-                supportsMediaPreview = false,
+                supportsMediaPreview = data.optBoolean("supports_media_preview", false),
             ))
         }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
     )
@@ -427,7 +422,7 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
     }
 
     override suspend fun uploadMedia(request: DeviceMediaUploadRequest): LanTransportResult<DeviceJobSnapshot> =
-        client.uploadSourcePlusBin(request).fold(
+        client.uploadBinOnly(request).fold(
             onSuccess = { root -> parseJob(root.optJSONObject("data"))?.let { LanTransportResult.Success(it) }
                 ?: LanTransportResult.Failure(DeviceRejection.Unsupported) },
             onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
