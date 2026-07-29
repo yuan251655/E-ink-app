@@ -13,6 +13,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -27,6 +28,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.SdCard
+import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import com.einkphoto.app.feature.settings.network.ApConfigDraft
@@ -36,6 +43,10 @@ import com.einkphoto.app.feature.settings.network.NetworkSnapshot
 import com.einkphoto.app.feature.settings.network.StaConfigDraft
 import com.einkphoto.app.feature.settings.network.StaState
 import com.einkphoto.app.feature.settings.network.WifiNetwork
+import com.einkphoto.app.feature.settings.storage.StorageActionResult
+import com.einkphoto.app.feature.settings.storage.StorageHealth
+import com.einkphoto.app.feature.settings.storage.StorageRepository
+import com.einkphoto.app.feature.settings.storage.StorageSnapshot
 import kotlinx.coroutines.launch
 
 /** Settings home keeps future features as entries; network configuration is the first complete sub-page. */
@@ -45,13 +56,22 @@ fun NetworkSettingsScreen(
     contentPadding: PaddingValues,
     showNetworkConfiguration: Boolean,
     onOpenNetworkConfiguration: () -> Unit,
+    showStorageManagement: Boolean,
+    onOpenStorageManagement: () -> Unit,
+    storageRepository: StorageRepository,
 ) {
     if (showNetworkConfiguration) NetworkConfigurationPage(repository, contentPadding)
-    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration)
+    else if (showStorageManagement) StorageManagementPage(storageRepository, contentPadding)
+    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement)
 }
 
 @Composable
-private fun SettingsHome(repository: NetworkRepository, contentPadding: PaddingValues, onOpenNetwork: () -> Unit) {
+private fun SettingsHome(
+    repository: NetworkRepository,
+    contentPadding: PaddingValues,
+    onOpenNetwork: () -> Unit,
+    onOpenStorageManagement: () -> Unit,
+) {
     val state by repository.snapshot.collectAsState()
     LaunchedEffect(repository) { repository.refresh() }
     Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -65,8 +85,153 @@ private fun SettingsHome(repository: NetworkRepository, contentPadding: PaddingV
                 state.sta.ssid?.let { Text("${it}${state.sta.ip?.let { ip -> "  ·  $ip" } ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
+        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenStorageManagement)) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Outlined.SdCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("TF 卡管理", style = MaterialTheme.typography.titleMedium)
+                    Text("查看存储状态、空间信息和设备维护", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         Text("后续将在这里增加电源、轮播和系统设置。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun StorageManagementPage(repository: StorageRepository, contentPadding: PaddingValues) {
+    val state by repository.snapshot.collectAsState()
+    val scope = rememberCoroutineScope()
+    var rechecking by remember { mutableStateOf(false) }
+    var actionMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(repository) { repository.refresh() }
+    Column(
+        Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text("TF 卡管理", style = MaterialTheme.typography.headlineSmall)
+
+        Card(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Outlined.SdCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text("TF 卡状态", style = MaterialTheme.typography.titleMedium)
+                    Text(storageHealthTitle(state.health), color = storageHealthColor(state.health))
+                    Text(storageHealthDetail(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+
+        Text("存储空间", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Card(Modifier.fillMaxWidth()) {
+            val totalBytes = state.totalBytes
+            val freeBytes = state.freeBytes
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(if (totalBytes != null) "已使用 ${formatBytes((totalBytes - (freeBytes ?: 0L)).coerceAtLeast(0L))} / ${formatBytes(totalBytes)}" else "容量信息暂不可用", style = MaterialTheme.typography.titleMedium)
+                Text("剩余空间 ${freeBytes?.let(::formatBytes) ?: "--"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("由设备端 TF 服务实时统计", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+
+        Text("内容概览", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                StorageOverviewRow(Icons.Outlined.FolderOpen, "本地相册", storageUsageDescription(state.localAlbumItemCount, state.localAlbumUsageBytes, "已保存照片"))
+                StorageOverviewRow(Icons.Outlined.Storage, "临时文件", storageUsageDescription(state.stagingItemCount, state.stagingUsageBytes, "未完成上传的临时文件"))
+            }
+        }
+
+        Text("设备维护", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Icon(Icons.Outlined.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("重新检测 TF 卡", style = MaterialTheme.typography.titleMedium)
+                        Text("仅在没有上传或显示读取任务时执行", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                OutlinedButton(
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !rechecking,
+                    onClick = {
+                        scope.launch {
+                            rechecking = true
+                            actionMessage = when (val result = repository.remount()) {
+                                StorageActionResult.Accepted -> "TF 卡已重新检测"
+                                is StorageActionResult.Rejected -> result.message
+                            }
+                            rechecking = false
+                        }
+                    },
+                ) { Text(if (rechecking) "正在检测…" else "重新检测") }
+            }
+        }
+
+        Text("最近状态", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Card(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(state.lastErrorCode?.let { "最近异常：$it" } ?: "暂无异常", style = MaterialTheme.typography.titleMedium)
+                    Text(state.lastErrorMessage ?: "设备返回的 TF 卡状态正常", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    state.lastCheckAgeSeconds?.let { Text("最近检测：${ageDescription(it)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                }
+            }
+        }
+        actionMessage?.let { Text(it, color = if (it == "TF 卡已重新检测") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error) }
+    }
+}
+
+@Composable
+private fun StorageOverviewRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, description: String) {
+    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+private fun storageHealthTitle(health: StorageHealth): String = when (health) {
+    StorageHealth.Ready -> "正常可用"
+    StorageHealth.Degraded -> "可用，但存在异常"
+    StorageHealth.Missing -> "未检测到 TF 卡"
+    StorageHealth.ErrorBackoff -> "暂时不可用"
+    StorageHealth.Unknown -> "等待读取设备状态"
+}
+
+@Composable
+private fun storageHealthColor(health: StorageHealth) = when (health) {
+    StorageHealth.Ready -> MaterialTheme.colorScheme.primary
+    StorageHealth.Degraded, StorageHealth.Missing, StorageHealth.ErrorBackoff -> MaterialTheme.colorScheme.error
+    StorageHealth.Unknown -> MaterialTheme.colorScheme.onSurfaceVariant
+}
+
+private fun storageHealthDetail(state: StorageSnapshot): String = when {
+    state.health == StorageHealth.Unknown -> "连接相框后将显示挂载、读取和写入状态"
+    !state.mounted -> "TF 卡未挂载"
+    state.readable && state.writable -> "已挂载，可读取和写入"
+    state.readable -> "已挂载，只读"
+    else -> "已挂载，但当前无法读取"
+}
+
+private fun storageUsageDescription(count: Int?, bytes: Long?, suffix: String): String =
+    if (count == null && bytes == null) "信息暂不可用" else "${count ?: 0} 项 · ${bytes?.let(::formatBytes) ?: "--"} · $suffix"
+
+private fun formatBytes(bytes: Long): String = when {
+    bytes < 1024L -> "$bytes B"
+    bytes < 1024L * 1024L -> "%.1f KB".format(bytes / 1024.0)
+    bytes < 1024L * 1024L * 1024L -> "%.1f MB".format(bytes / (1024.0 * 1024.0))
+    else -> "%.1f GB".format(bytes / (1024.0 * 1024.0 * 1024.0))
+}
+
+private fun ageDescription(seconds: Long): String = when {
+    seconds < 10L -> "刚刚"
+    seconds < 60L -> "$seconds 秒前"
+    seconds < 3600L -> "${seconds / 60} 分钟前"
+    else -> "${seconds / 3600} 小时前"
 }
 
 @Composable

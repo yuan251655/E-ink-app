@@ -134,3 +134,34 @@ data class LanNetworkStatus(
     val reconnectAttempt: Int?,
     val reconnectBackoffSeconds: Int?,
 )
+
+/**
+ * Device-authoritative storage-health snapshot returned by `/api/v1/storage/status`.
+ *
+ * The App receives aggregate usage only.  It never receives a TF mount path or performs
+ * file-system operations itself; those remain owned by the device StorageService.
+ */
+data class DeviceStorageStatus(
+    val apiVersion: String,
+    val revision: Long,
+    val state: String,
+    val mounted: Boolean,
+    val readable: Boolean,
+    val writable: Boolean,
+    val totalBytes: Long?,
+    val freeBytes: Long?,
+    val localAlbumItemCount: Int?,
+    val localAlbumUsageBytes: Long?,
+    val stagingItemCount: Int?,
+    val stagingUsageBytes: Long?,
+    val lastErrorCode: String?,
+    val lastErrorMessage: String?,
+    /** Device-provided elapsed duration; deliberately not represented as wall-clock time. */
+    val lastCheckAgeSeconds: Long?,
+    val lastRemountAgeSeconds: Long?,
+)
+
+sealed interface StorageTransportResult {
+    data class Success(val status: DeviceStorageStatus) : StorageTransportResult
+    data class Failure(val rejection: DeviceRejection) : StorageTransportResult
+}

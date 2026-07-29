@@ -27,6 +27,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceSession
 import com.einkphoto.app.feature.settings.network.LanNetworkRepository
+import com.einkphoto.app.feature.settings.storage.LanStorageRepository
 import com.einkphoto.app.ui.components.DeviceConnectionBadge
 import com.einkphoto.app.ui.localalbum.LocalAlbumDemoHost
 import com.einkphoto.app.ui.localalbum.rememberLocalAlbumDemoRuntime
@@ -49,7 +50,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
     val snapshot by session.snapshot.collectAsState()
     val localAlbumRuntime = rememberLocalAlbumDemoRuntime(session)
     val networkRepository = remember { LanNetworkRepository() }
+    val storageRepository = remember { LanStorageRepository() }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
+    var showStorageManagement by rememberSaveable { mutableStateOf(false) }
     // The badge is device state, not an optimistic network label.  Keep it
     // current while this composition is alive so powering off the frame (or
     // losing either AP or STA reachability) clears a stale "connected" badge.
@@ -62,8 +65,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         }
     }
 
-    BackHandler(enabled = selected == AppDestination.Settings && showNetworkConfiguration) {
+    BackHandler(enabled = selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement)) {
         showNetworkConfiguration = false
+        showStorageManagement = false
     }
 
     Scaffold(
@@ -73,8 +77,11 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
             CenterAlignedTopAppBar(
                 title = { Text("墨水屏相册") },
                 navigationIcon = {
-                    if (selected == AppDestination.Settings && showNetworkConfiguration) {
-                        IconButton(onClick = { showNetworkConfiguration = false }) {
+                    if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement)) {
+                        IconButton(onClick = {
+                            showNetworkConfiguration = false
+                            showStorageManagement = false
+                        }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to settings")
                         }
                     }
@@ -89,7 +96,10 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                     NavigationBarItem(
                         selected = selected == destination,
                         onClick = {
-                            if (destination != AppDestination.Settings) showNetworkConfiguration = false
+                            if (destination != AppDestination.Settings) {
+                                showNetworkConfiguration = false
+                                showStorageManagement = false
+                            }
                             onDestinationSelected(destination)
                         },
                         icon = { androidx.compose.material3.Icon(if (selected == destination) destination.selectedIcon else destination.icon, null) },
@@ -106,6 +116,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 contentPadding = padding,
                 showNetworkConfiguration = showNetworkConfiguration,
                 onOpenNetworkConfiguration = { showNetworkConfiguration = true },
+                showStorageManagement = showStorageManagement,
+                onOpenStorageManagement = { showStorageManagement = true },
+                storageRepository = storageRepository,
             )
             else -> FeaturePlaceholderScreen(destination = selected, contentPadding = padding)
         }
