@@ -45,7 +45,7 @@ class DevelopmentApHttpClient {
             throw requireNotNull(lastError)
         }.onFailure { error ->
             Log.w("EInkDeviceHttp", "GET $baseUrl$path failed", error)
-        }.onFailure { error -> Log.w("EInkDeviceHttp", "GET $baseUrl$path failed", error) }
+        }
     } }
 
     /** Downloads only the fixed, device-owned 4bpp preview frame for one safe media id. */
@@ -67,7 +67,7 @@ class DevelopmentApHttpClient {
             } finally {
                 connection.disconnect()
             }
-        }.onFailure { error -> Log.w("EInkDeviceHttp", "UPLOAD $baseUrl/api/v1/media/upload failed", error) }
+        }.onFailure { error -> Log.w("EInkDeviceHttp", "PREVIEW $baseUrl/api/v1/media/$mediaId/preview failed", error) }
     } }
 
     /** Uploads the device's fixed-size 4bpp frame using the current v1 multipart contract. */
@@ -130,6 +130,7 @@ class DevelopmentApHttpClient {
      */
     suspend fun uploadSourcePlusBin(request: DeviceMediaUploadRequest): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
+            val startedAt = android.os.SystemClock.elapsedRealtime()
             require(request.sourceFile.isFile && request.imageBinFile.isFile) { "upload files are unavailable" }
             require(request.sourceSizeBytes == request.sourceFile.length()) { "source size changed" }
             require(request.imageBinSizeBytes == request.imageBinFile.length() && request.imageBinSizeBytes == 192_000L) { "BIN size changed" }
@@ -185,14 +186,18 @@ class DevelopmentApHttpClient {
                     output.write(binHeader); request.imageBinFile.inputStream().buffered(16 * 1024).use { it.copyTo(output, 16 * 1024) }
                     output.write(closing)
                 }
-                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                val status = connection.responseCode
+                val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                     ?: error("HTTP ${connection.responseCode}")
                 val root = JSONObject(stream.bufferedReader().use { it.readText() })
                 if (!root.optBoolean("ok", false)) error(root.optString("code", "upload_failed"))
+                Log.i("EInkDeviceHttp", "UPLOAD ${request.requestId} HTTP $status in ${android.os.SystemClock.elapsedRealtime() - startedAt}ms")
                 root
             } finally {
                 connection.disconnect()
             }
+        }.onFailure { error ->
+            Log.w("EInkDeviceHttp", "UPLOAD ${request.requestId} $baseUrl/api/v1/media/upload failed", error)
         }
     } }
 

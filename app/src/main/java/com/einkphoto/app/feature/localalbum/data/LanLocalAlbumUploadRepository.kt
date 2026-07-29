@@ -92,10 +92,19 @@ class LanLocalAlbumUploadRepository(
     }
 
     private suspend fun uploadWithRecovery(request: DeviceMediaUploadRequest): LanTransportResult<com.einkphoto.app.core.device.DeviceJobSnapshot> {
-        val first = transport.uploadMedia(request)
-        if (first !is LanTransportResult.Failure || first.rejection != DeviceRejection.Offline) return first
-        delay(1_500L)
-        return transport.uploadMedia(request)
+        // The ESP owns a single HTTP worker and may be briefly unavailable while it
+        // closes the preceding TF-backed multipart session. Reuse request_id: if a
+        // response was lost after admission, the device returns the same job instead
+        // of writing a duplicate media item.
+        var result = transport.uploadMedia(request)
+        val delaysMs = longArrayOf(2_000L, 5_000L, 10_000L)
+        for (delayMs in delaysMs) {
+            if (result !is LanTransportResult.Failure ||
+                (result.rejection != DeviceRejection.Offline && result.rejection != DeviceRejection.StorageUnavailable)) break
+            delay(delayMs)
+            result = transport.uploadMedia(request)
+        }
+        return result
     }
 
     private suspend fun awaitTerminalJob(
