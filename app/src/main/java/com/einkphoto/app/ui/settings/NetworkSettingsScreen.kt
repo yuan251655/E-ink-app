@@ -40,10 +40,14 @@ import kotlinx.coroutines.launch
 
 /** Settings home keeps future features as entries; network configuration is the first complete sub-page. */
 @Composable
-fun NetworkSettingsScreen(repository: NetworkRepository, contentPadding: PaddingValues, onOpenCurrentDisplay: () -> Unit) {
-    var openNetwork by remember { mutableStateOf(false) }
-    if (openNetwork) NetworkConfigurationPage(repository, contentPadding, { openNetwork = false })
-    else SettingsHome(repository, contentPadding) { openNetwork = true }
+fun NetworkSettingsScreen(
+    repository: NetworkRepository,
+    contentPadding: PaddingValues,
+    showNetworkConfiguration: Boolean,
+    onOpenNetworkConfiguration: () -> Unit,
+) {
+    if (showNetworkConfiguration) NetworkConfigurationPage(repository, contentPadding)
+    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration)
 }
 
 @Composable
@@ -66,14 +70,14 @@ private fun SettingsHome(repository: NetworkRepository, contentPadding: PaddingV
 }
 
 @Composable
-private fun NetworkConfigurationPage(repository: NetworkRepository, contentPadding: PaddingValues, onBack: () -> Unit) {
+private fun NetworkConfigurationPage(repository: NetworkRepository, contentPadding: PaddingValues) {
     val state by repository.snapshot.collectAsState(); val scope = rememberCoroutineScope()
     var scanning by remember { mutableStateOf(false) }; var networks by remember { mutableStateOf<List<WifiNetwork>>(emptyList()) }
     var message by remember { mutableStateOf<String?>(null) }; var staDialog by remember { mutableStateOf<String?>(null) }
     var editAp by remember { mutableStateOf(false) }; var confirmRestore by remember { mutableStateOf(false) }; var confirmForget by remember { mutableStateOf(false) }
     LaunchedEffect(repository) { repository.refresh() }
     Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text("网络配置", style = MaterialTheme.typography.headlineSmall); TextButton(onClick = onBack) { Text("返回") } }
+        Text("网络配置", style = MaterialTheme.typography.headlineSmall)
         ConnectionSummary(state)
         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("相框热点（AP）", style = MaterialTheme.typography.titleMedium)
