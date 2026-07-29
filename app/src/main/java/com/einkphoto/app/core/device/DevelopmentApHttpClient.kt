@@ -1,0 +1,543 @@
+package com.einkphoto.app.core.device
+
+import android.util.Log
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.nio.charset.StandardCharsets
+
+/** Versioned device HTTP client. The endpoint is read for every request so AP/STA switching takes effect immediately. */
+class DevelopmentApHttpClient {
+    private val baseUrl: String get() = DeviceEndpointConfig.apiBaseUrl
+    suspend fun get(path: String): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            var lastError: Throwable? = null
+            for (attempt in 0..2) {
+                try {
+                val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+                    // The ESP may take several seconds to re-open its single HTTP slot after a
+                    // TF transaction. Three seconds turned a valid, late 200 response into a
+                    // false "offline" result before batch upload could even start.
+                    requestMethod = "GET"; connectTimeout = 8_000; readTimeout = 12_000
+                    setRequestProperty("Connection", "close")
+                }
+                try {
+                    val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                        ?: error("HTTP ${connection.responseCode}")
+                    val json = stream.bufferedReader().use { it.readText() }
+                    val root = JSONObject(json)
+                    if (!root.optBoolean("ok", false)) error(root.optString("code", "request_failed"))
+                    return@runCatching root
+                } finally {
+                    connection.disconnect()
+                }
+                } catch (error: Throwable) {
+                    lastError = error
+                    if (attempt < 2) Thread.sleep(500L * (attempt + 1))
+                }
+            }
+            throw requireNotNull(lastError)
+        }.onFailure { error ->
+            Log.w("EInkDeviceHttp", "GET $baseUrl$path failed", error)
+        }.onFailure { error -> Log.w("EInkDeviceHttp", "GET $baseUrl$path failed", error) }
+    } }
+
+    /** Downloads only the fixed, device-owned 4bpp preview frame for one safe media id. */
+    suspend fun downloadMediaPreview(mediaId: String): Result<ByteArray> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            require(mediaId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "invalid media id" }
+            val connection = (URL(baseUrl + "/api/v1/media/$mediaId/preview").openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 15_000
+                setRequestProperty("Connection", "close")
+            }
+            try {
+                require(connection.responseCode == HttpURLConnection.HTTP_OK) { "preview unavailable" }
+                val declared = connection.contentLengthLong
+                // ESP-IDF sends this fixed-size resource with chunked HTTP.
+                require(declared < 0L || declared == 192_000L) { "invalid preview size" }
+                connection.inputStream.use { input ->
+                    input.readNBytes(192_001).also { require(it.size == 192_000) { "invalid preview frame" } }
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }.onFailure { error -> Log.w("EInkDeviceHttp", "UPLOAD $baseUrl/api/v1/media/upload failed", error) }
+    } }
+
+    /** Uploads the device's fixed-size 4bpp frame using the current v1 multipart contract. */
+    suspend fun uploadLocalFrame(requestId: String, mediaId: String, displayName: String, frameFile: File): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            require(frameFile.isFile) { "processed image is unavailable" }
+            val boundary = "EinkPhoto-${System.currentTimeMillis()}"
+            val metadata = JSONObject()
+                .put("request_id", requestId)
+                .put("media_id", mediaId)
+                .put("category", "local")
+                .put("upload_mode", "source+bin")
+                .put("display_name", displayName.take(64).replace('"', ' ').replace('\\', ' '))
+                .toString()
+                .toByteArray(StandardCharsets.UTF_8)
+            val opening = "--$boundary\r\n" +
+                "Content-Disposition: form-data; name=\"metadata\"\r\n" +
+                "Content-Type: application/json\r\n\r\n"
+            val imageHeader = "\r\n--$boundary\r\n" +
+                "Content-Disposition: form-data; name=\"image_bin\"; filename=\"image.bin\"\r\n" +
+                "Content-Type: application/octet-stream\r\n\r\n"
+            val closing = "\r\n--$boundary--\r\n"
+            val openingBytes = opening.toByteArray(StandardCharsets.UTF_8)
+            val imageHeaderBytes = imageHeader.toByteArray(StandardCharsets.UTF_8)
+            val closingBytes = closing.toByteArray(StandardCharsets.UTF_8)
+            val contentLength = openingBytes.size.toLong() + metadata.size + imageHeaderBytes.size + frameFile.length() + closingBytes.size
+            require(contentLength <= Int.MAX_VALUE) { "upload is too large" }
+
+            val connection = (URL(baseUrl + "/api/v1/media/upload").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 5_000
+                readTimeout = 20_000
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                setRequestProperty("Connection", "close")
+                setFixedLengthStreamingMode(contentLength)
+            }
+            try {
+                connection.outputStream.buffered().use { output ->
+                    output.write(openingBytes)
+                    output.write(metadata)
+                    output.write(imageHeaderBytes)
+                    frameFile.inputStream().buffered().use { it.copyTo(output) }
+                    output.write(closingBytes)
+                }
+                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                    ?: error("HTTP ${connection.responseCode}")
+                val root = JSONObject(stream.bufferedReader().use { it.readText() })
+                if (!root.optBoolean("ok", false)) error(root.optString("code", "upload_failed"))
+                root
+            } finally {
+                connection.disconnect()
+            }
+        }
+    } }
+
+    /**
+     * Frozen phase-0 multipart contract: metadata -> source -> image_bin.
+     * Files are streamed from App-private storage; no device path or old media DTO is sent.
+     */
+    suspend fun uploadSourcePlusBin(request: DeviceMediaUploadRequest): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            require(request.sourceFile.isFile && request.imageBinFile.isFile) { "upload files are unavailable" }
+            require(request.sourceSizeBytes == request.sourceFile.length()) { "source size changed" }
+            require(request.imageBinSizeBytes == request.imageBinFile.length() && request.imageBinSizeBytes == 192_000L) { "BIN size changed" }
+            require(request.sourceMimeType == "image/jpeg" || request.sourceMimeType == "image/png") { "unsupported source MIME type" }
+            val boundary = "EinkPhoto-${System.currentTimeMillis()}"
+            val metadata = JSONObject()
+                .put("request_id", request.requestId)
+                .put("category", "local")
+                .put("upload_mode", "source_plus_bin")
+                .put("display_name", request.displayName)
+                .put("source", JSONObject()
+                    .put("mime_type", request.sourceMimeType)
+                    .put("size_bytes", request.sourceSizeBytes)
+                    // Current product firmware consumes `bytes`; retain it as a transition alias
+                    // while keeping the frozen `size_bytes` field for the App/ESP contract.
+                    .put("bytes", request.sourceSizeBytes)
+                    .put("sha256", request.sourceSha256))
+                .put("image_bin", JSONObject()
+                    .put("size_bytes", request.imageBinSizeBytes)
+                    .put("bytes", request.imageBinSizeBytes)
+                    .put("sha256", request.imageBinSha256))
+                .put("display_profile", JSONObject()
+                    .put("width", request.displayProfile.widthPx)
+                    .put("height", request.displayProfile.heightPx)
+                    .put("frame_bytes", request.displayProfile.frameBytes)
+                    .put("pixel_format", request.displayProfile.pixelFormat)
+                    .put("palette", request.displayProfile.palette)
+                    .put("orientation", request.displayProfile.orientation)
+                    .put("rotation_degrees", request.displayProfile.rotationDegrees)
+                    .put("fit_mode", request.displayProfile.fitMode)
+                    .put("converter_version", request.displayProfile.converterVersion ?: "unknown"))
+                .toString()
+                .toByteArray(StandardCharsets.UTF_8)
+            val metadataHeader = multipartHeader(boundary, "metadata", "metadata.json", "application/json")
+            val sourceHeader = multipartHeader(boundary, "source", safeFilename(request.sourceFile.name), request.sourceMimeType)
+            val binHeader = multipartHeader(boundary, "image_bin", "image.bin", "application/octet-stream")
+            val closing = "\r\n--$boundary--\r\n".toByteArray(StandardCharsets.UTF_8)
+            val contentLength = metadataHeader.size.toLong() + metadata.size + 2L +
+                sourceHeader.size + request.sourceSizeBytes + 2L + binHeader.size + request.imageBinSizeBytes + closing.size
+            val connection = (URL(baseUrl + "/api/v1/media/upload").openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 8_000
+                readTimeout = 120_000
+                setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+                setRequestProperty("Connection", "close")
+                setFixedLengthStreamingMode(contentLength)
+            }
+            try {
+                connection.outputStream.buffered(16 * 1024).use { output ->
+                    output.write(metadataHeader); output.write(metadata); output.write("\r\n".toByteArray(StandardCharsets.UTF_8))
+                    output.write(sourceHeader); request.sourceFile.inputStream().buffered(16 * 1024).use { it.copyTo(output, 16 * 1024) }; output.write("\r\n".toByteArray(StandardCharsets.UTF_8))
+                    output.write(binHeader); request.imageBinFile.inputStream().buffered(16 * 1024).use { it.copyTo(output, 16 * 1024) }
+                    output.write(closing)
+                }
+                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                    ?: error("HTTP ${connection.responseCode}")
+                val root = JSONObject(stream.bufferedReader().use { it.readText() })
+                if (!root.optBoolean("ok", false)) error(root.optString("code", "upload_failed"))
+                root
+            } finally {
+                connection.disconnect()
+            }
+        }
+    } }
+
+    suspend fun postJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
+            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                doOutput = true
+                connectTimeout = 5_000
+                readTimeout = 20_000
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Connection", "close")
+                setFixedLengthStreamingMode(payload.size)
+            }
+            try {
+                connection.outputStream.use { it.write(payload) }
+                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                    ?: error("HTTP ${connection.responseCode}")
+                val root = JSONObject(stream.bufferedReader().use { it.readText() })
+                if (!root.optBoolean("ok", false)) error(root.optString("code", "request_failed"))
+                root
+            } finally {
+                connection.disconnect()
+            }
+        }
+    } }
+
+    suspend fun deleteJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
+            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = "DELETE"
+                doOutput = true
+                connectTimeout = 5_000
+                readTimeout = 20_000
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Connection", "close")
+                setFixedLengthStreamingMode(payload.size)
+            }
+            try {
+                connection.outputStream.use { it.write(payload) }
+                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                    ?: error("HTTP ${connection.responseCode}")
+                val root = JSONObject(stream.bufferedReader().use { it.readText() })
+                if (!root.optBoolean("ok", false)) error(root.optString("code", "delete_failed"))
+                root
+            } finally {
+                connection.disconnect()
+            }
+        }.onFailure { error ->
+            Log.w("EInkDeviceHttp", "DELETE $baseUrl$path failed", error)
+        }
+    } }
+
+    /** Streams a binary response into App-private storage without buffering an image in RAM. */
+    suspend fun downloadToFile(path: String, destination: File): Result<DownloadedFile> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            destination.parentFile?.mkdirs()
+            val temporary = File(destination.parentFile, "${destination.name}.part")
+            temporary.delete()
+            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                setRequestProperty("Connection", "close")
+                connectTimeout = 5_000
+                readTimeout = 30_000
+            }
+            try {
+                require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
+                val mimeType = connection.contentType?.substringBefore(';')?.trim().orEmpty()
+                require(mimeType == "image/jpeg" || mimeType == "image/png") { "unexpected source MIME type" }
+                val expectedLength = connection.contentLengthLong
+                val written = connection.inputStream.use { input ->
+                    FileOutputStream(temporary).use { output -> input.copyTo(output, bufferSize = 16 * 1024) }
+                }
+                require(expectedLength < 0 || expectedLength == written) { "incomplete source response" }
+                require(written > 0L) { "empty source response" }
+                destination.delete()
+                require(temporary.renameTo(destination)) { "unable to commit source cache" }
+                DownloadedFile(mimeType, written, connection.getHeaderField("ETag"))
+            } catch (error: Throwable) {
+                temporary.delete()
+                throw error
+            } finally {
+                connection.disconnect()
+            }
+        }
+    } }
+
+    private companion object {
+        /** ESP HTTP is single-resource constrained; serialize every request across all clients. */
+        val deviceHttpMutex = Mutex()
+    }
+}
+
+private fun multipartHeader(boundary: String, name: String, filename: String, contentType: String): ByteArray =
+    ("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"; filename=\"$filename\"\r\n" +
+        "Content-Type: $contentType\r\n\r\n").toByteArray(StandardCharsets.UTF_8)
+
+private fun safeFilename(value: String): String = value.replace(Regex("[^A-Za-z0-9._-]"), "_").take(80).ifBlank { "source.jpg" }
+
+data class DownloadedFile(val mimeType: String, val sizeBytes: Long, val eTag: String?)
+
+class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = DevelopmentApHttpClient()) : LanDeviceTransport {
+    override suspend fun health(): LanTransportResult<LanHealth> = client.get("/api/v1/health").fold(
+        onSuccess = { root ->
+            val data = root.getJSONObject("data")
+            val apiVersion = data.optString("api_version")
+            LanTransportResult.Success(LanHealth("unknown", "墨水屏相册", apiVersion, apiVersion == "v1"))
+        }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+    )
+
+    override suspend fun capabilities(): LanTransportResult<DeviceCapabilities> = client.get("/api/v1/device/capabilities").fold(
+        onSuccess = { root ->
+            val data = root.getJSONObject("data")
+            val modes = data.optJSONArray("media_upload_modes")
+            val sourceAndBin = (0 until (modes?.length() ?: 0)).any { modes?.optString(it) == "source_plus_bin" }
+            LanTransportResult.Success(DeviceCapabilities(
+                displayProfile = DisplayProfile(
+                    widthPx = data.optInt("display_width", 800).coerceAtLeast(1),
+                    heightPx = data.optInt("display_height", 480).coerceAtLeast(1),
+                    frameBytes = data.optInt("frame_bytes", 192_000).coerceAtLeast(1),
+                    palette = listOf("black", "white", "green", "blue", "red", "yellow"),
+                    orientationKey = "reported_by_media_profile",
+                ),
+                supportsSourceOnlyUpload = (0 until (modes?.length() ?: 0)).any { modes?.optString(it) == "source_only" },
+                supportsSourceAndBinUpload = sourceAndBin,
+                supportsMediaPreview = false,
+            ))
+        }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+    )
+
+    override suspend fun status(): LanTransportResult<LanStatus> = client.get("/api/v1/device/status").fold(
+        onSuccess = { root ->
+            val data = root.getJSONObject("data")
+            val mode = data.optJSONObject("mode")
+            val display = data.optJSONObject("display")
+            val storage = data.optJSONObject("storage")
+            LanTransportResult.Success(
+                LanStatus(
+                    activeFeature = featureFromApi(mode?.opt("active_feature")),
+                    connection = DeviceConnectionState.Online,
+                    // ESP DisplayState: idle=0, queued=1, loading=2,
+                    // refreshing=3, finalizing=4, success=5, failed=6.
+                    // Only the in-flight states block another display request.
+                    displayBusy = (display?.optInt("state", 0) ?: 0) in 1..4,
+                    storageFreeBytes = storage?.takeIf { it.optInt("state", 0) == 2 }?.optLong("free_bytes"),
+                    currentMediaId = display?.optString("current_media_id").takeIf { !it.isNullOrBlank() },
+                    modeRevision = mode?.optLong("revision", 0L) ?: 0L,
+                ),
+            )
+        }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+    )
+
+    override suspend fun networkStatus(): LanTransportResult<LanNetworkStatus> = client.get("/api/v1/network/status").fold(
+        onSuccess = { root ->
+            val data = root.getJSONObject("data")
+            val ap = data.optJSONObject("ap")
+            val sta = data.optJSONObject("sta")
+            val internet = data.optJSONObject("internet")
+            val reconnect = data.optJSONObject("reconnect")
+            val connected = sta?.optBoolean("connected", false) == true
+            LanTransportResult.Success(
+                LanNetworkStatus(
+                    apiVersion = data.optString("api_version", "v1"),
+                    deviceId = data.optString("device_id").takeIf { it.isNotBlank() },
+                    revision = data.optLong("revision", 0L),
+                    apEnabled = ap?.optBoolean("enabled", false) == true,
+                    apSsid = ap?.optString("ssid").takeIf { !it.isNullOrBlank() },
+                    apIp = ap?.optString("ip").takeIf { !it.isNullOrBlank() },
+                    apChannel = ap?.let { it.optInt("channel").takeIf { channel -> channel > 0 } },
+                    apConnectedClients = ap?.let { it.optInt("connected_clients").takeIf { clients -> clients >= 0 } },
+                    staEnabled = sta?.let { it.optBoolean("enabled", it.optBoolean("configured", false)) } == true,
+                    staState = sta?.optString("state")?.takeIf { it.isNotBlank() }
+                        ?: if (connected) "connected" else if (sta?.optBoolean("configured", false) == true) "connecting" else "disabled",
+                    staSsid = sta?.optString("ssid").takeIf { !it.isNullOrBlank() },
+                    staIp = sta?.optString("ip").takeIf { !it.isNullOrBlank() },
+                    staGateway = sta?.optString("gateway").takeIf { !it.isNullOrBlank() },
+                    staRssiDbm = sta?.let { it.optInt("rssi_dbm").takeIf { rssi -> rssi != 0 } },
+                    staLastErrorCode = sta?.optString("last_error_code").takeIf { !it.isNullOrBlank() },
+                    staLastErrorMessage = sta?.optString("last_error_message").takeIf { !it.isNullOrBlank() },
+                    internetState = internet?.optString("state")?.takeIf { it.isNotBlank() } ?: "unknown",
+                    reconnectInProgress = reconnect?.optBoolean("in_progress", false) == true,
+                    reconnectAttempt = reconnect?.let { it.optInt("attempt").takeIf { attempt -> attempt >= 0 } },
+                    reconnectBackoffSeconds = reconnect?.let { it.optInt("backoff_seconds").takeIf { seconds -> seconds >= 0 } },
+                ),
+            )
+        }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+    )
+
+    override suspend fun listMedia(category: DeviceMediaCategory, cursor: String?, limit: Int): LanTransportResult<DeviceMediaPage> {
+        if (limit !in 1..30) return LanTransportResult.Failure(DeviceRejection.Unsupported)
+        val query = buildList {
+            add("category=${category.apiValue}")
+            if (!cursor.isNullOrBlank()) add("cursor=${java.net.URLEncoder.encode(cursor, StandardCharsets.UTF_8.name())}")
+            add("limit=$limit")
+        }.joinToString("&")
+        return client.get("/api/v1/media?$query").fold(
+            onSuccess = { root ->
+                val data = root.getJSONObject("data")
+                val rawItems = data.optJSONArray("items")
+                val items = buildList {
+                    for (index in 0 until (rawItems?.length() ?: 0)) {
+                        rawItems?.optJSONObject(index)?.let(::parseMediaItem)?.let(::add)
+                    }
+                }
+                LanTransportResult.Success(DeviceMediaPage(items, data.optString("next_cursor").takeIf { it.isNotBlank() }, data.optLong("revision", 0L)))
+            }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+        )
+    }
+
+    override suspend fun mediaDetail(mediaId: String): LanTransportResult<DeviceMediaItem> =
+        safeMediaId(mediaId)?.let { safeId ->
+            client.get("/api/v1/media/$safeId").fold(
+                onSuccess = { root -> parseMediaItem(root.getJSONObject("data"))?.let { LanTransportResult.Success<DeviceMediaItem>(it) }
+                    ?: LanTransportResult.Failure(DeviceRejection.Unsupported) },
+                onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+            )
+        } ?: LanTransportResult.Failure(DeviceRejection.Unsupported)
+
+    override suspend fun downloadMediaSource(mediaId: String, destination: File): LanTransportResult<DeviceMediaSource> {
+        val safeId = safeMediaId(mediaId) ?: return LanTransportResult.Failure(DeviceRejection.Unsupported)
+        return client.downloadToFile("/api/v1/media/$safeId/source", destination).fold(
+            onSuccess = { file -> LanTransportResult.Success(DeviceMediaSource(safeId, file.mimeType, file.sizeBytes, file.eTag, destination)) },
+            onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+        )
+    }
+
+    override suspend fun uploadMedia(request: DeviceMediaUploadRequest): LanTransportResult<DeviceJobSnapshot> =
+        client.uploadSourcePlusBin(request).fold(
+            onSuccess = { root -> parseJob(root.optJSONObject("data"))?.let { LanTransportResult.Success(it) }
+                ?: LanTransportResult.Failure(DeviceRejection.Unsupported) },
+            onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
+        )
+
+    override suspend fun jobStatus(jobId: DeviceJobId): LanTransportResult<DeviceJobSnapshot> =
+        client.get("/api/v1/jobs/${jobId.value}").fold(
+            onSuccess = { root -> parseJob(root.optJSONObject("data"))?.let { LanTransportResult.Success(it) }
+                ?: LanTransportResult.Failure(DeviceRejection.Unsupported) },
+            onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
+        )
+
+    override suspend fun displayMedia(
+        mediaId: String,
+        requestId: String,
+        expectedModeRevision: Long,
+        afterDisplay: String,
+    ): LanTransportResult<DeviceJobSnapshot> {
+        val safeId = safeMediaId(mediaId) ?: return LanTransportResult.Failure(DeviceRejection.Unsupported)
+        if (afterDisplay !in setOf("continue", "hold")) return LanTransportResult.Failure(DeviceRejection.Unsupported)
+        return client.postJson(
+            "/api/v1/media/$safeId/display",
+            JSONObject()
+                .put("request_id", requestId)
+                .put("expected_mode_revision", expectedModeRevision)
+                .put("after_display", afterDisplay),
+        ).fold(
+            onSuccess = { root -> parseJob(root.optJSONObject("data"))?.let { LanTransportResult.Success(it) }
+                ?: LanTransportResult.Failure(DeviceRejection.Unsupported) },
+            onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
+        )
+    }
+
+    override suspend fun deleteMedia(mediaId: String, requestId: String, expectedRevision: Long): LanTransportResult<Unit> {
+        val safeId = safeMediaId(mediaId) ?: return LanTransportResult.Failure(DeviceRejection.Unsupported)
+        return client.deleteJson(
+            "/api/v1/media/$safeId",
+            JSONObject().put("request_id", requestId).put("expected_revision", expectedRevision),
+        ).fold(
+            onSuccess = { LanTransportResult.Success(Unit) },
+            onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
+        )
+    }
+
+
+    override suspend fun switchFeature(feature: DeviceFeature, requestId: String): LanTransportResult<DeviceJobId> =
+        LanTransportResult.Failure(DeviceRejection.Unsupported)
+
+    private fun safeMediaId(mediaId: String): String? = mediaId.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,64}")) }
+
+    private fun featureFromApi(raw: Any?): DeviceFeature = when (raw) {
+        0, "0", "local_album" -> DeviceFeature.LocalAlbum
+        1, "1", "ai_album" -> DeviceFeature.AiAlbum
+        2, "2", "info_dashboard" -> DeviceFeature.InfoDashboard
+        else -> DeviceFeature.LocalAlbum
+    }
+
+    private fun parseMediaItem(raw: JSONObject): DeviceMediaItem? {
+        val mediaId = raw.optString("media_id").takeIf { it.isNotBlank() } ?: return null
+        val category = DeviceMediaCategory.fromApi(raw.optString("category")) ?: return null
+        val profile = raw.optJSONObject("display_profile") ?: return null
+        val width = profile.optInt("width", 0)
+        val height = profile.optInt("height", 0)
+        val frameBytes = profile.optInt("frame_bytes", 0)
+        if (width <= 0 || height <= 0 || frameBytes <= 0) return null
+        return DeviceMediaItem(
+            mediaId = mediaId,
+            displayName = raw.optString("display_name").trim().ifBlank { "未命名图片" },
+            category = category,
+            createdAtEpochMillis = raw.optLong("created_at_ms", 0L),
+            updatedAtEpochMillis = raw.optLong("updated_at_ms", 0L),
+            displayProfile = DeviceMediaDisplayProfile(width, height, frameBytes, profile.optString("pixel_format"), profile.optString("palette"), profile.optString("orientation"), profile.optInt("rotation_degrees", 0), profile.optString("fit_mode"), profile.optString("converter_version").takeIf { it.isNotBlank() }),
+            source = parseAsset(raw.optJSONObject("source")),
+            preview = parseAsset(raw.optJSONObject("preview")),
+            imageBin = parseAsset(raw.optJSONObject("image_bin") ?: raw.optJSONObject("frame")),
+            manifestVersion = raw.optInt("manifest_version", 0),
+            revision = raw.optLong("revision", 0L),
+        )
+    }
+
+    private fun parseAsset(raw: JSONObject?): DeviceMediaAsset = DeviceMediaAsset(
+        present = raw?.optBoolean("present", false) == true,
+        mimeType = raw?.optString("mime_type").takeIf { !it.isNullOrBlank() },
+        sizeBytes = raw?.let { it.optLong("size_bytes", it.optLong("bytes", -1L)).takeIf { bytes -> bytes >= 0L } },
+        sha256 = raw?.optString("sha256").takeIf { !it.isNullOrBlank() },
+    )
+
+    private fun parseJob(raw: JSONObject?): DeviceJobSnapshot? {
+        val data = raw ?: return null
+        val jobId = data.optString("job_id").takeIf { it.isNotBlank() } ?: return null
+        return DeviceJobSnapshot(
+            jobId = DeviceJobId(jobId),
+            state = when (data.optInt("state", -1)) {
+                0 -> DeviceJobState.Queued
+                1 -> DeviceJobState.Running
+                2 -> DeviceJobState.Success
+                3 -> DeviceJobState.Failed
+                4 -> DeviceJobState.Cancelled
+                5 -> DeviceJobState.TimedOut
+                else -> DeviceJobState.Failed
+            },
+            phase = data.optString("phase").ifBlank { "unknown" },
+            progressPercent = data.optInt("progress_percent", 0).coerceIn(0, 100),
+            errorCode = data.optString("error_code").takeIf { it.isNotBlank() },
+            mediaId = data.optString("media_id").takeIf { it.isNotBlank() },
+        )
+    }
+
+    private fun rejectionFromError(error: Throwable): DeviceRejection = when {
+        error.message?.contains("storage_no_space", ignoreCase = true) == true -> DeviceRejection.StorageNoSpace
+        error.message?.contains("source_too_large", ignoreCase = true) == true || error.message?.contains("request_too_large", ignoreCase = true) == true -> DeviceRejection.SourceTooLarge
+        error.message?.contains("storage", ignoreCase = true) == true -> DeviceRejection.StorageUnavailable
+        error.message?.contains("display_busy", ignoreCase = true) == true -> DeviceRejection.DisplayBusy
+        error.message?.contains("media_protected", ignoreCase = true) == true -> DeviceRejection.MediaProtected
+        error.message?.contains("unsupported", ignoreCase = true) == true -> DeviceRejection.Unsupported
+        else -> DeviceRejection.Offline
+    }
+}
