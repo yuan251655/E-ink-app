@@ -1,9 +1,11 @@
 package com.einkphoto.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.LocalIndication
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -94,8 +96,15 @@ fun EInkPhotoTheme(
     } else {
         LocalSemanticColors.current
     }
+    // The default state layer is too subtle on the app's pale pink cards.
+    // One stronger pink ripple makes every Material button and navigation item
+    // acknowledge a tap without changing each screen independently.
+    val pressIndication = ripple(color = if (darkTheme) Rose80 else Rose40)
 
-    androidx.compose.runtime.CompositionLocalProvider(LocalSemanticColors provides semanticColors) {
+    androidx.compose.runtime.CompositionLocalProvider(
+        LocalSemanticColors provides semanticColors,
+        LocalIndication provides pressIndication,
+    ) {
         MaterialTheme(
             colorScheme = if (darkTheme) DarkColors else LightColors,
             typography = AppTypography,
@@ -104,4 +113,3 @@ fun EInkPhotoTheme(
         )
     }
 }
-

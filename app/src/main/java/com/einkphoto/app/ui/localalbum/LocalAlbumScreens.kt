@@ -1,7 +1,6 @@
 package com.einkphoto.app.ui.localalbum
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -98,6 +97,7 @@ import com.einkphoto.app.feature.localalbum.model.AdaptationSettings
 import com.einkphoto.app.feature.localalbum.model.FitMode
 import com.einkphoto.app.feature.localalbum.model.ConversionDraft
 import com.einkphoto.app.feature.localalbum.model.ConversionStage
+import com.einkphoto.app.ui.components.pressFeedbackClickable
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -374,7 +374,7 @@ internal fun PhoneImportScreen(
         }
         items(sources, key = { it.sourceId }) { source ->
             Card(
-                modifier = Modifier.clickable { onSelectSource(source.sourceId) },
+                modifier = Modifier.pressFeedbackClickable { onSelectSource(source.sourceId) },
                 colors = CardDefaults.cardColors(
                     containerColor = if (source.sourceId == selectedSourceId) {
                         MaterialTheme.colorScheme.secondaryContainer
@@ -1007,7 +1007,7 @@ internal fun BatchManageScreen(state: LocalAlbumUiState, viewModel: LocalAlbumVi
                         selected = media.id in selectedIds
                         stateDescription = if (protected) "受保护，不可选择" else if (media.id in selectedIds) "已选择" else "未选择"
                     }
-                    .clickable(enabled = !protected && !state.actionsLocked, role = Role.Checkbox) {
+                    .pressFeedbackClickable(enabled = !protected && !state.actionsLocked, role = Role.Checkbox) {
                         if (media.id in selectedIds) selectedIds.remove(media.id) else selectedIds.add(media.id)
                     },
                 border = BorderStroke(1.dp, if (media.id in selectedIds) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
@@ -1114,7 +1114,7 @@ private fun DetailLine(label: String, value: String) {
 @Composable
 private fun ChoiceCard(selected: Boolean, title: String, detail: String, onClick: () -> Unit) {
     OutlinedCard(
-        modifier = Modifier.fillMaxWidth().clickable(role = Role.RadioButton, onClick = onClick),
+        modifier = Modifier.fillMaxWidth().pressFeedbackClickable(role = Role.RadioButton, onClick = onClick),
         border = BorderStroke(1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
     ) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {

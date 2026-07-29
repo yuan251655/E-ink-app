@@ -1,6 +1,5 @@
 package com.einkphoto.app.ui.settings
 
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -47,6 +46,7 @@ import com.einkphoto.app.feature.settings.storage.StorageActionResult
 import com.einkphoto.app.feature.settings.storage.StorageHealth
 import com.einkphoto.app.feature.settings.storage.StorageRepository
 import com.einkphoto.app.feature.settings.storage.StorageSnapshot
+import com.einkphoto.app.ui.components.pressFeedbackClickable
 import kotlinx.coroutines.launch
 
 /** Settings home keeps future features as entries; network configuration is the first complete sub-page. */
@@ -77,7 +77,7 @@ private fun SettingsHome(
     Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("设置", style = MaterialTheme.typography.headlineSmall)
         Text("设备管理", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenNetwork)) {
+        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenNetwork)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text("网络配置", style = MaterialTheme.typography.titleMedium)
                 Text("管理相框热点与家庭 Wi-Fi", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -85,7 +85,7 @@ private fun SettingsHome(
                 state.sta.ssid?.let { Text("${it}${state.sta.ip?.let { ip -> "  ·  $ip" } ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
-        Card(Modifier.fillMaxWidth().clickable(onClick = onOpenStorageManagement)) {
+        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenStorageManagement)) {
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Icon(Icons.Outlined.SdCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -256,7 +256,7 @@ private fun NetworkConfigurationPage(repository: NetworkRepository, contentPaddi
             Text(staDescription(state), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (state.sta.ip != null) Text("IP：${state.sta.ip}    网关：${state.sta.gateway ?: "—"}")
             Button(enabled = !scanning, onClick = { scope.launch { scanning = true; message = null; repository.scan24Ghz().onSuccess { networks = it }.onFailure { message = "扫描失败，请确认相框在线后重试" }; scanning = false } }, modifier = Modifier.fillMaxWidth()) { Text(if (scanning) "正在扫描…" else "扫描 2.4 GHz Wi-Fi") }
-            networks.forEach { network -> Row(Modifier.fillMaxWidth().clickable { staDialog = network.ssid }.padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(network.ssid); Text("信号 ${network.rssiDbm} dBm  ·  信道 ${network.channel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text(network.security.name.uppercase()) } }
+            networks.forEach { network -> Row(Modifier.fillMaxWidth().pressFeedbackClickable { staDialog = network.ssid }.padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(network.ssid); Text("信号 ${network.rssiDbm} dBm  ·  信道 ${network.channel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text(network.security.name.uppercase()) } }
             OutlinedButton(onClick = { staDialog = "" }, modifier = Modifier.fillMaxWidth()) { Text("其他网络") }
             if (state.sta.state != StaState.Disabled || state.sta.ssid != null) OutlinedButton(onClick = { confirmForget = true }, modifier = Modifier.fillMaxWidth()) { Text("忘记已保存的 Wi-Fi") }
         } }

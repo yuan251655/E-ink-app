@@ -8,7 +8,6 @@ import android.net.Uri
 import androidx.exifinterface.media.ExifInterface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -65,6 +64,7 @@ import com.einkphoto.app.feature.localalbum.model.AdaptationSettings
 import com.einkphoto.app.feature.localalbum.conversion.CandidateSixColorConverter
 import com.einkphoto.app.feature.localalbum.data.renderDeviceComposition
 import com.einkphoto.app.ui.theme.appSemanticColors
+import com.einkphoto.app.ui.components.pressFeedbackClickable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
@@ -359,7 +359,7 @@ internal fun MediaCard(
     Card(
         modifier = modifier
             .heightIn(min = 48.dp)
-            .clickable(enabled = enabled, onClick = onClick),
+            .pressFeedbackClickable(enabled = enabled, onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
         SavedMediaPreview(media, Modifier.fillMaxWidth())
@@ -417,7 +417,7 @@ internal fun SectionTitle(
         Text(title, style = MaterialTheme.typography.titleLarge)
         if (action != null && onAction != null) {
             Surface(
-                modifier = Modifier.heightIn(min = 48.dp).clickable(onClick = onAction),
+                modifier = Modifier.heightIn(min = 48.dp).pressFeedbackClickable(onClick = onAction),
                 shape = RoundedCornerShape(12.dp),
                 color = Color.Transparent,
             ) {
