@@ -467,6 +467,47 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         )
     }
 
+    override suspend fun localAlbumPlayback(): PlaybackTransportResult =
+        client.get("/api/v1/local-album/playback").fold(
+            onSuccess = { root -> parsePlayback(root.optJSONObject("data"))?.let(PlaybackTransportResult::Success)
+                ?: PlaybackTransportResult.Failure(DeviceRejection.Unsupported) },
+            onFailure = { error -> PlaybackTransportResult.Failure(rejectionFromError(error)) },
+        )
+
+    override suspend fun saveLocalAlbumPlayback(
+        requestId: String,
+        expectedRevision: Long,
+        mode: String,
+        intervalSeconds: Int,
+        order: String,
+    ): PlaybackTransportResult {
+        if (mode !in setOf("auto", "paused") || order !in setOf("sequential", "random") ||
+            intervalSeconds !in setOf(300, 900, 1800, 3600, 10800, 21600, 43200, 86400)
+        ) return PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
+        return client.postJson(
+            "/api/v1/local-album/playback",
+            JSONObject()
+                .put("request_id", requestId)
+                .put("expected_revision", expectedRevision)
+                .put("mode", mode)
+                .put("interval_seconds", intervalSeconds)
+                .put("order", order),
+        ).fold(
+            onSuccess = { root -> parsePlayback(root.optJSONObject("data"))?.let(PlaybackTransportResult::Success)
+                ?: PlaybackTransportResult.Failure(DeviceRejection.Unsupported) },
+            onFailure = { error ->
+                // DevelopmentApHttpClient retains the ESP's JSON error code in the exception
+                // message. Re-read the authority snapshot after a revision conflict.
+                if (error.message?.contains("revision_conflict", ignoreCase = true) == true) {
+                    when (val latest = localAlbumPlayback()) {
+                        is PlaybackTransportResult.Success -> PlaybackTransportResult.RevisionConflict(latest.snapshot)
+                        else -> PlaybackTransportResult.RevisionConflict(null)
+                    }
+                } else PlaybackTransportResult.Failure(rejectionFromError(error))
+            },
+        )
+    }
+
 
     override suspend fun switchFeature(feature: DeviceFeature, requestId: String): LanTransportResult<DeviceJobId> =
         LanTransportResult.Failure(DeviceRejection.Unsupported)
@@ -528,6 +569,31 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
             progressPercent = data.optInt("progress_percent", 0).coerceIn(0, 100),
             errorCode = data.optString("error_code").takeIf { it.isNotBlank() },
             mediaId = data.optString("media_id").takeIf { it.isNotBlank() },
+        )
+    }
+
+    private fun parsePlayback(raw: JSONObject?): DevicePlaybackSnapshot? {
+        val data = raw ?: return null
+        val mode = data.optString("mode")
+        val order = data.optString("order")
+        val interval = data.optInt("interval_seconds", -1)
+        if (mode !in setOf("auto", "paused") || order !in setOf("sequential", "random") ||
+            interval !in setOf(300, 900, 1800, 3600, 10800, 21600, 43200, 86400)
+        ) return null
+        return DevicePlaybackSnapshot(
+            mode = mode,
+            intervalSeconds = interval,
+            order = order,
+            currentMediaId = data.optString("current_media_id").takeIf { it.isNotBlank() },
+            // New firmware reports a countdown because its scheduler clock is monotonic, not
+            // Unix time. Never render that monotonic value as a wall-clock timestamp.
+            nextPlayInSeconds = data.optLong("next_play_in_seconds", -1L).takeIf { it >= 0L },
+            // Old firmware may expose a monotonic next_play_at_ms. Only accept an unambiguous
+            // Unix epoch millisecond value; otherwise the UI will say it is waiting to sync.
+            nextPlayAtEpochMillis = data.optLong("next_play_at_ms", -1L)
+                .takeIf { it >= 1_577_836_800_000L },
+            revision = data.optLong("revision", 0L),
+            stateRevision = data.optLong("state_revision", 0L),
         )
     }
 

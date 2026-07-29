@@ -44,7 +44,7 @@ class FakeLocalAlbumRepository(
     override val currentDisplay: StateFlow<CurrentDisplay> = mutableCurrentDisplay.asStateFlow()
 
     private val mutableSettings = MutableStateFlow(
-        PlaybackSettings(mode = PlayMode.Auto, order = PlayOrder.Sequential, intervalMinutes = 30),
+        PlaybackSettings(mode = PlayMode.Auto, order = PlayOrder.Sequential, intervalSeconds = 1800, syncState = com.einkphoto.app.feature.localalbum.model.PlaybackSyncState.Ready),
     )
     override val settings: StateFlow<PlaybackSettings> = mutableSettings.asStateFlow()
 
@@ -257,7 +257,7 @@ class FakeLocalAlbumRepository(
             mutableSettings.value = mutableSettings.value.copy(
                 mode = when (request.afterDisplay) {
                     AfterDisplay.Continue -> PlayMode.Auto
-                    AfterDisplay.Hold -> PlayMode.ManualHold
+                    AfterDisplay.Hold -> PlayMode.Paused
                 },
             )
         } else {

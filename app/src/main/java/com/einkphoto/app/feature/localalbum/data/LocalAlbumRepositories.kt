@@ -20,6 +20,8 @@ interface MediaRepository {
 
 interface PlaybackRepository {
     val settings: StateFlow<PlaybackSettings>
+    /** Re-reads device runtime state without changing its saved playback configuration. */
+    suspend fun refreshPlayback(): DeviceCommandResult<Unit> = DeviceCommandResult.Accepted(Unit)
     suspend fun save(settings: PlaybackSettings): DeviceCommandResult<Unit>
 }
 

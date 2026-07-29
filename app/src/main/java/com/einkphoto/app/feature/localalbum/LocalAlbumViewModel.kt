@@ -212,6 +212,11 @@ class LocalAlbumViewModel(
         }
     }
 
+    /** Called only while the local-album overview is visible to follow device auto-play changes. */
+    fun refreshPlaybackStatus() {
+        viewModelScope.launch { playbackRepository.refreshPlayback() }
+    }
+
     fun clearMessage() {
         message.value = null
     }

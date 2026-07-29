@@ -58,7 +58,9 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -67,6 +69,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
@@ -88,6 +91,7 @@ import com.einkphoto.app.feature.localalbum.model.MediaProtectionReason
 import com.einkphoto.app.feature.localalbum.model.PlayMode
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
 import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
+import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.DisplayResult
 import com.einkphoto.app.feature.localalbum.model.PhoneSource
 import com.einkphoto.app.feature.localalbum.model.AdaptationSettings
@@ -96,6 +100,8 @@ import com.einkphoto.app.feature.localalbum.model.ConversionDraft
 import com.einkphoto.app.feature.localalbum.model.ConversionStage
 import java.text.DateFormat
 import java.util.Date
+import java.util.Locale
+import kotlinx.coroutines.delay
 
 @Composable
 internal fun LocalAlbumOverviewScreen(
@@ -107,59 +113,30 @@ internal fun LocalAlbumOverviewScreen(
     onBatch: () -> Unit,
     onMedia: (MediaId) -> Unit,
 ) {
-    var previewPresentation by remember { mutableStateOf(ArtworkPresentation.DeviceCanvas) }
     val currentMedia = state.currentMedia
-    val deviceProfile = state.device.capabilities?.displayProfile
-    val deviceAspectRatio = deviceProfile?.let { it.widthPx.toFloat() / it.heightPx.toFloat() } ?: (5f / 3f)
+    // The effect is disposed automatically when this overview leaves composition. The device is
+    // authoritative; polling keeps the status card in sync after an automatic display change.
+    LaunchedEffect(Unit) {
+        while (true) {
+            viewModel.refreshPlaybackStatus()
+            delay(15_000)
+        }
+    }
     ScreenList(title = "本地相册", subtitle = "管理手机导入与设备中的照片") {
         item {
             SectionTitle("设备当前画面")
             Spacer(Modifier.height(12.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("查看方式", style = MaterialTheme.typography.titleMedium)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilterChip(
-                            selected = previewPresentation == ArtworkPresentation.DeviceCanvas,
-                            onClick = { previewPresentation = ArtworkPresentation.DeviceCanvas },
-                            label = { Text("相框效果") },
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        )
-                        FilterChip(
-                            selected = previewPresentation == ArtworkPresentation.SourceAspect,
-                            onClick = { previewPresentation = ArtworkPresentation.SourceAspect },
-                            label = { Text("原图比例") },
-                            modifier = Modifier.heightIn(min = 48.dp),
-                        )
-                    }
-                    Text(
-                        if (previewPresentation == ArtworkPresentation.DeviceCanvas) {
-                            if (deviceProfile != null) {
-                                "相框效果按设备画布 ${deviceProfile.widthPx} × ${deviceProfile.heightPx} 展示，反映电子纸最终显示区域。"
-                            } else {
-                                "尚未获取设备画布能力，暂按默认相框比例展示。"
-                            }
-                        } else {
-                            "原图比例会按横图或竖图自适应展示，不改变设备实际输出方向。"
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    PlaybackStatusCard(state.playback)
                     currentMedia?.let { media ->
                         // In real mode this is the source image streamed from the device and
                         // associated with its authoritative current_media_id, never a phone draft.
                         SavedMediaPreview(media, Modifier.fillMaxWidth())
                     } ?: DemoArtwork(
                         seed = 1,
-                        description = if (previewPresentation == ArtworkPresentation.DeviceCanvas) {
-                            "设备当前电子纸画面"
-                        } else {
-                            "当前原图比例预览"
-                        },
+                        description = "设备当前电子纸画面",
                         modifier = Modifier.fillMaxWidth(),
-                        presentation = previewPresentation,
-                        sourceAspectRatio = deviceAspectRatio,
-                        deviceAspectRatio = deviceAspectRatio,
                     )
                 }
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -271,6 +248,76 @@ internal fun LocalAlbumOverviewScreen(
         }
     }
 }
+
+/** Device-authoritative playback state from GET /api/v1/local-album/playback. */
+@Composable
+private fun PlaybackStatusCard(playback: PlaybackSettings) {
+    val isAuto = playback.mode == PlayMode.Auto
+    val title = if (isAuto) "正在轮播" else "轮播已暂停"
+    val detail = if (isAuto) {
+        "${playbackIntervalLabel(playback.intervalSeconds)} · ${if (playback.order == PlayOrder.Sequential) "顺序播放" else "随机播放"}"
+    } else {
+        "保持当前图片，手动切换后仍不会自动播放"
+    }
+    var nowMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    // A countdown does not itself cause a Flow emission. Refresh the local wall-clock label at
+    // minute precision while this card is visible, without making extra device requests.
+    LaunchedEffect(playback.nextPlayInSeconds, playback.nextPlayAtEpochMillis, playback.stateRevision) {
+        nowMillis = System.currentTimeMillis()
+        while (true) {
+            delay(60_000)
+            nowMillis = System.currentTimeMillis()
+        }
+    }
+    val nextTime = playback.nextPlaybackWallClock(nowMillis)
+    val accessibilityText = buildString {
+        append(title)
+        append("，")
+        append(detail)
+        if (isAuto) append(if (nextTime != null) "，下次切换时间 $nextTime" else "，下次切换时间暂未同步")
+    }
+
+    OutlinedCard(
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (isAuto) 0.75f else 0.45f)),
+        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .semantics { contentDescription = accessibilityText },
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            Icon(
+                imageVector = if (isAuto) Icons.Outlined.Schedule else Icons.Outlined.Pause,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(28.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (isAuto) {
+                    Text(
+                        nextTime?.let { "下次切换：$it" } ?: "下次切换时间正在与设备同步",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun PlaybackSettings.nextPlaybackWallClock(nowMillis: Long): String? = when {
+    nextPlayInSeconds != null -> formatPlaybackTime(nowMillis + nextPlayInSeconds.coerceAtLeast(0) * 1_000L)
+    nextPlayAtEpochMillis != null -> formatPlaybackTime(nextPlayAtEpochMillis)
+    else -> null
+}
+
+private fun formatPlaybackTime(epochMillis: Long): String =
+    java.text.SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(epochMillis))
 
 @Composable
 internal fun DeviceLibraryScreen(state: LocalAlbumUiState, onBack: () -> Unit, onBatch: () -> Unit, onMedia: (MediaId) -> Unit) {
@@ -818,15 +865,32 @@ internal fun MediaDetailScreen(
 internal fun PlaybackSettingsScreen(state: LocalAlbumUiState, viewModel: LocalAlbumViewModel, onBack: () -> Unit) {
     var mode by remember(state.playback.mode) { mutableStateOf(state.playback.mode) }
     var order by remember(state.playback.order) { mutableStateOf(state.playback.order) }
-    var interval by remember(state.playback.intervalMinutes) { mutableIntStateOf(state.playback.intervalMinutes) }
-    ScreenList("轮播设置", "设置保存到设备端，不只保存在手机", onBack) {
+    var intervalSeconds by remember(state.playback.intervalSeconds) { mutableIntStateOf(state.playback.intervalSeconds) }
+    val canSave = !state.actionsLocked && state.playback.syncState == PlaybackSyncState.Ready
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回本地相册")
+            }
+            Column(Modifier.padding(start = 4.dp)) {
+                Text("轮播设置", style = MaterialTheme.typography.titleLarge)
+                Text("设置保存到相册设备", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        LazyColumn(
+            modifier = Modifier.weight(1f),
+            contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
         item {
             Text("播放模式", style = MaterialTheme.typography.titleLarge)
             Spacer(Modifier.height(8.dp))
             listOf(
                 Triple(PlayMode.Auto, "自动轮播", "按间隔自动显示下一张"),
                 Triple(PlayMode.Paused, "暂停轮播", "保留进度，停止自动换图"),
-                Triple(PlayMode.ManualHold, "固定当前图片", "保持当前图片直到再次操作"),
             ).forEach { (value, title, detail) ->
                 ChoiceCard(mode == value, title, detail) { mode = value }
                 Spacer(Modifier.height(8.dp))
@@ -834,15 +898,22 @@ internal fun PlaybackSettingsScreen(state: LocalAlbumUiState, viewModel: LocalAl
         }
         item {
             Text("轮播间隔", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(15, 30, 60).forEach { minutes ->
+            Spacer(Modifier.height(8.dp))
+            listOf(
+                listOf(300 to "5 分钟", 900 to "15 分钟", 1800 to "30 分钟", 3600 to "1 小时"),
+                listOf(10800 to "3 小时", 21600 to "6 小时", 43200 to "12 小时", 86400 to "24 小时"),
+            ).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    row.forEach { (seconds, label) ->
                     FilterChip(
-                        selected = interval == minutes,
-                        onClick = { interval = minutes },
-                        label = { Text("$minutes 分钟") },
-                        modifier = Modifier.heightIn(min = 48.dp),
+                            selected = intervalSeconds == seconds,
+                            onClick = { intervalSeconds = seconds },
+                            label = { Text(label) },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                     )
                 }
+                }
+                Spacer(Modifier.height(8.dp))
             }
         }
         item {
@@ -864,16 +935,34 @@ internal fun PlaybackSettingsScreen(state: LocalAlbumUiState, viewModel: LocalAl
         }
         item {
             Button(
-                onClick = { viewModel.savePlayback(PlaybackSettings(mode, order, interval)) },
-                enabled = !state.actionsLocked,
+                onClick = { viewModel.savePlayback(state.playback.copy(mode = mode, order = order, intervalSeconds = intervalSeconds)) },
+                enabled = canSave,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text("保存到设备") }
+            when (state.playback.syncState) {
+                PlaybackSyncState.Loading -> StatusRow(Icons.Outlined.HourglassTop, "轮播设置", "正在读取设备设置")
+                PlaybackSyncState.Offline -> StatusRow(Icons.Outlined.ErrorOutline, "轮播设置", "设备未连接，无法保存")
+                PlaybackSyncState.Conflict -> StatusRow(Icons.Outlined.ErrorOutline, "轮播设置", "设备设置已变更，已加载最新配置，请确认后重新保存")
+                PlaybackSyncState.Saving -> StatusRow(Icons.Outlined.HourglassTop, "轮播设置", "正在保存到设备")
+                PlaybackSyncState.Ready -> StatusRow(
+                    Icons.Outlined.CheckCircle,
+                    "设备状态",
+                    if (state.playback.mode == PlayMode.Auto) "已开启 · ${playbackIntervalLabel(state.playback.intervalSeconds)} · ${if (state.playback.order == PlayOrder.Sequential) "顺序播放" else "随机播放"}" else "已暂停，保持当前图片",
+                )
+            }
             state.userMessage?.let { message ->
                 Spacer(Modifier.height(8.dp))
                 StatusRow(Icons.Outlined.Info, "保存反馈", message)
             }
         }
+        }
     }
+}
+
+private fun playbackIntervalLabel(seconds: Int): String = when (seconds) {
+    300 -> "每 5 分钟"; 900 -> "每 15 分钟"; 1800 -> "每 30 分钟"; 3600 -> "每 1 小时"
+    10800 -> "每 3 小时"; 21600 -> "每 6 小时"; 43200 -> "每 12 小时"; 86400 -> "每 24 小时"
+    else -> "间隔未知"
 }
 
 @Composable

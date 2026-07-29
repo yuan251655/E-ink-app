@@ -51,6 +51,17 @@ interface LanDeviceTransport {
         expectedRevision: Long,
     ): LanTransportResult<Unit> = LanTransportResult.Failure(DeviceRejection.Unsupported)
 
+    suspend fun localAlbumPlayback(): PlaybackTransportResult =
+        PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
+
+    suspend fun saveLocalAlbumPlayback(
+        requestId: String,
+        expectedRevision: Long,
+        mode: String,
+        intervalSeconds: Int,
+        order: String,
+    ): PlaybackTransportResult = PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
+
     suspend fun switchFeature(feature: DeviceFeature, requestId: String): LanTransportResult<DeviceJobId>
 }
 

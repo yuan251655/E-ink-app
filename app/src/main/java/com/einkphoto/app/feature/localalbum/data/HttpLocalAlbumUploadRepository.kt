@@ -39,7 +39,7 @@ class HttpLocalAlbumUploadRepository(
         CurrentDisplay(null, DeviceFeature.LocalAlbum, DisplayResult.Idle, null),
     )
     override val currentDisplay: StateFlow<CurrentDisplay> = mutableCurrentDisplay.asStateFlow()
-    private val mutableSettings = MutableStateFlow(PlaybackSettings(PlayMode.Auto, PlayOrder.Sequential, 30))
+    private val mutableSettings = MutableStateFlow(PlaybackSettings(PlayMode.Auto, PlayOrder.Sequential, 1800, syncState = com.einkphoto.app.feature.localalbum.model.PlaybackSyncState.Ready))
     override val settings: StateFlow<PlaybackSettings> = mutableSettings.asStateFlow()
     private val mutableActiveJob = MutableStateFlow<DeviceJob?>(null)
     override val activeJob: StateFlow<DeviceJob?> = mutableActiveJob.asStateFlow()

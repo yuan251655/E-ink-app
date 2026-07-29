@@ -91,6 +91,27 @@ data class DeviceJobSnapshot(
     val mediaId: String?,
 )
 
+/** Device-authoritative local-album playback configuration and runtime snapshot. */
+data class DevicePlaybackSnapshot(
+    val mode: String,
+    val intervalSeconds: Int,
+    val order: String,
+    val currentMediaId: String?,
+    /** Remaining time supplied by current firmware. This is not an epoch timestamp. */
+    val nextPlayInSeconds: Long?,
+    /** Optional wall-clock timestamp supplied only by firmware which has a valid RTC/NTP clock. */
+    val nextPlayAtEpochMillis: Long?,
+    val revision: Long,
+    val stateRevision: Long,
+)
+
+sealed interface PlaybackTransportResult {
+    data class Success(val snapshot: DevicePlaybackSnapshot) : PlaybackTransportResult
+    /** The device also returns its latest snapshot, so the form can be safely reloaded. */
+    data class RevisionConflict(val snapshot: DevicePlaybackSnapshot?) : PlaybackTransportResult
+    data class Failure(val rejection: DeviceRejection) : PlaybackTransportResult
+}
+
 data class LanNetworkStatus(
     val apiVersion: String,
     val deviceId: String?,

@@ -13,6 +13,7 @@ import com.einkphoto.app.core.device.DeviceRejection
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceTransport
 import com.einkphoto.app.core.device.LanTransportResult
+import com.einkphoto.app.core.device.PlaybackTransportResult
 import com.einkphoto.app.feature.localalbum.model.AfterDisplay
 import com.einkphoto.app.feature.localalbum.model.CurrentDisplay
 import com.einkphoto.app.feature.localalbum.model.DisplayResult
@@ -20,7 +21,7 @@ import com.einkphoto.app.feature.localalbum.model.MediaAvailability
 import com.einkphoto.app.feature.localalbum.model.MediaCategory
 import com.einkphoto.app.feature.localalbum.model.MediaId
 import com.einkphoto.app.feature.localalbum.model.MediaItem
-import com.einkphoto.app.feature.localalbum.model.PlayMode
+import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
 import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
 import java.io.File
@@ -57,7 +58,9 @@ class LanLocalAlbumReadRepository(
     )
     override val currentDisplay: StateFlow<CurrentDisplay> = mutableCurrentDisplay.asStateFlow()
 
-    private val mutableSettings = MutableStateFlow(PlaybackSettings(PlayMode.Auto, PlayOrder.Sequential, 30))
+    private val mutableSettings = MutableStateFlow(
+        PlaybackSettings(com.einkphoto.app.feature.localalbum.model.PlayMode.Auto, PlayOrder.Sequential, 1800),
+    )
     override val settings: StateFlow<PlaybackSettings> = mutableSettings.asStateFlow()
 
     private val mutableActiveJob = MutableStateFlow<DeviceJob?>(null)
@@ -71,6 +74,7 @@ class LanLocalAlbumReadRepository(
     private val previewMutex = Mutex()
 
     override suspend fun refresh(): DeviceCommandResult<Unit> = refreshMutex.withLock {
+        refreshPlayback()
         val page = when (val result = listMediaWithRetry()) {
             is LanTransportResult.Success -> result.value
             is LanTransportResult.Failure -> {
@@ -164,8 +168,70 @@ class LanLocalAlbumReadRepository(
         }
     }
 
-    override suspend fun save(settings: PlaybackSettings): DeviceCommandResult<Unit> =
-        DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
+    override suspend fun save(settings: PlaybackSettings): DeviceCommandResult<Unit> {
+        val requestId = "playback-${System.currentTimeMillis()}"
+        mutableSettings.value = settings.copy(syncState = PlaybackSyncState.Saving)
+        return when (val result = transport.saveLocalAlbumPlayback(
+            requestId = requestId,
+            expectedRevision = settings.revision,
+            mode = if (settings.mode == com.einkphoto.app.feature.localalbum.model.PlayMode.Auto) "auto" else "paused",
+            intervalSeconds = settings.intervalSeconds,
+            order = if (settings.order == PlayOrder.Sequential) "sequential" else "random",
+        )) {
+            is PlaybackTransportResult.Success -> {
+                applyPlaybackSnapshot(result.snapshot, PlaybackSyncState.Ready)
+                DeviceCommandResult.Accepted(Unit)
+            }
+            is PlaybackTransportResult.RevisionConflict -> {
+                result.snapshot?.let { mutableSettings.value = it.toPlaybackSettings(PlaybackSyncState.Conflict) }
+                    ?: run { mutableSettings.value = settings.copy(syncState = PlaybackSyncState.Conflict) }
+                DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
+            }
+            is PlaybackTransportResult.Failure -> {
+                mutableSettings.value = settings.copy(syncState = PlaybackSyncState.Offline)
+                DeviceCommandResult.Rejected(result.rejection)
+            }
+        }
+    }
+
+    override suspend fun refreshPlayback(): DeviceCommandResult<Unit> {
+        when (val result = transport.localAlbumPlayback()) {
+            is PlaybackTransportResult.Success -> {
+                applyPlaybackSnapshot(result.snapshot, PlaybackSyncState.Ready)
+                return DeviceCommandResult.Accepted(Unit)
+            }
+            is PlaybackTransportResult.RevisionConflict -> return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
+            is PlaybackTransportResult.Failure -> {
+                mutableSettings.value = mutableSettings.value.copy(syncState = PlaybackSyncState.Offline)
+                return DeviceCommandResult.Rejected(result.rejection)
+            }
+        }
+    }
+
+    private fun com.einkphoto.app.core.device.DevicePlaybackSnapshot.toPlaybackSettings(sync: PlaybackSyncState) = PlaybackSettings(
+        mode = if (mode == "auto") com.einkphoto.app.feature.localalbum.model.PlayMode.Auto else com.einkphoto.app.feature.localalbum.model.PlayMode.Paused,
+        order = if (order == "sequential") PlayOrder.Sequential else PlayOrder.Random,
+        intervalSeconds = intervalSeconds,
+        currentMediaId = currentMediaId?.let(::MediaId),
+        nextPlayInSeconds = nextPlayInSeconds,
+        nextPlayAtEpochMillis = nextPlayAtEpochMillis,
+        revision = revision,
+        stateRevision = stateRevision,
+        syncState = sync,
+    )
+
+    /** Playback is the authority after an automatic switch, so keep the overview preview in sync. */
+    private fun applyPlaybackSnapshot(
+        snapshot: com.einkphoto.app.core.device.DevicePlaybackSnapshot,
+        sync: PlaybackSyncState,
+    ) {
+        mutableSettings.value = snapshot.toPlaybackSettings(sync)
+        mutableCurrentDisplay.value = mutableCurrentDisplay.value.copy(
+            mediaId = snapshot.currentMediaId?.let(::MediaId),
+            feature = DeviceFeature.LocalAlbum,
+            result = if (snapshot.currentMediaId == null) DisplayResult.Idle else DisplayResult.Success,
+        )
+    }
 
     override suspend fun requestDisplay(mediaId: MediaId, afterDisplay: AfterDisplay): DeviceCommandResult<DeviceJobId> =
         displayRequestMutex.withLock {

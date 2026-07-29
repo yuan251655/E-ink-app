@@ -151,7 +151,6 @@ data class CurrentDisplay(
 
 enum class PlayMode {
     Auto,
-    ManualHold,
     Paused,
 }
 
@@ -160,14 +159,25 @@ enum class PlayOrder {
     Random,
 }
 
+enum class PlaybackSyncState { Loading, Ready, Offline, Conflict, Saving }
+
 data class PlaybackSettings(
     val mode: PlayMode,
     val order: PlayOrder,
-    val intervalMinutes: Int,
+    val intervalSeconds: Int,
+    val currentMediaId: MediaId? = null,
+    /** Device-reported countdown. The App converts this to local wall time for display. */
+    val nextPlayInSeconds: Long? = null,
+    val nextPlayAtEpochMillis: Long? = null,
+    val revision: Long = 0L,
+    val stateRevision: Long = 0L,
+    val syncState: PlaybackSyncState = PlaybackSyncState.Loading,
 ) {
     init {
-        require(intervalMinutes > 0)
+        require(intervalSeconds in setOf(300, 900, 1800, 3600, 10800, 21600, 43200, 86400))
     }
+
+    val intervalMinutes: Int get() = intervalSeconds / 60
 }
 
 enum class AfterDisplay {

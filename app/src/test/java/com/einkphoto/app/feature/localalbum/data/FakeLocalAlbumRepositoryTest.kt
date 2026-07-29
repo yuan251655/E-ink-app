@@ -54,7 +54,7 @@ class FakeLocalAlbumRepositoryTest {
         assertEquals(com.einkphoto.app.core.device.DeviceJobState.Running, repository.advanceDisplayJob()?.state)
         repository.finishDisplayJob(success = true)
         assertEquals(newTarget, repository.currentDisplay.value.mediaId)
-        assertEquals(PlayMode.ManualHold, repository.settings.value.mode)
+        assertEquals(PlayMode.Paused, repository.settings.value.mode)
         assertTrue(MediaProtectionReason.CurrentDisplay !in repository.media.value.first().protectionReasons)
         assertTrue(MediaProtectionReason.CurrentDisplay in repository.media.value[1].protectionReasons)
     }
@@ -63,11 +63,11 @@ class FakeLocalAlbumRepositoryTest {
     fun continueStrategyRestoresAutomaticPlaybackOnlyAfterSuccess() = runTest {
         val session = FakeDeviceSession()
         val repository = FakeLocalAlbumRepository(session)
-        repository.save(repository.settings.value.copy(mode = PlayMode.ManualHold))
+        repository.save(repository.settings.value.copy(mode = PlayMode.Paused))
         val target = repository.media.value[2].id
 
         repository.requestDisplay(target, AfterDisplay.Continue)
-        assertEquals(PlayMode.ManualHold, repository.settings.value.mode)
+        assertEquals(PlayMode.Paused, repository.settings.value.mode)
         repository.advanceDisplayJob()
         repository.finishDisplayJob(success = true)
 
