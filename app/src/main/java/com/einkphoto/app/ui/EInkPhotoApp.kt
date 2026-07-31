@@ -23,6 +23,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceSession
@@ -31,6 +32,7 @@ import com.einkphoto.app.feature.settings.storage.LanStorageRepository
 import com.einkphoto.app.ui.components.DeviceConnectionBadge
 import com.einkphoto.app.ui.localalbum.LocalAlbumDemoHost
 import com.einkphoto.app.ui.localalbum.rememberLocalAlbumDemoRuntime
+import com.einkphoto.app.ui.aialbum.AiAlbumHost
 import com.einkphoto.app.ui.model.AppDestination
 import com.einkphoto.app.ui.screens.FeaturePlaceholderScreen
 import com.einkphoto.app.ui.settings.NetworkSettingsScreen
@@ -39,6 +41,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.einkphoto.app.feature.mode.ModeSwitchViewModel
+import com.einkphoto.app.feature.aialbum.AiImageViewModel
+import com.einkphoto.app.feature.aialbum.LanAiImageRepository
 import kotlinx.coroutines.delay
 
 @Composable
@@ -50,7 +54,9 @@ fun EInkPhotoApp() = EInkPhotoTheme {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected: (AppDestination) -> Unit) {
-    val session = remember { LanDeviceSession(HttpLanDeviceTransport()) }
+    val context = LocalContext.current
+    val transport = remember { HttpLanDeviceTransport() }
+    val session = remember(transport) { LanDeviceSession(transport) }
     val snapshot by session.snapshot.collectAsState()
     val localAlbumRuntime = rememberLocalAlbumDemoRuntime(session)
     val modeSwitchViewModel: ModeSwitchViewModel = viewModel(
@@ -63,11 +69,25 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         },
     )
     val modeSwitchState by modeSwitchViewModel.state.collectAsState()
+    val aiImageViewModel: AiImageViewModel = viewModel(
+        key = "ai-image-library",
+        factory = remember(session, transport, context) {
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = AiImageViewModel(
+                    session,
+                    LanAiImageRepository(context.applicationContext, session, transport),
+                ) as T
+            }
+        },
+    )
+    val aiImageState by aiImageViewModel.state.collectAsState()
     val networkRepository = remember { LanNetworkRepository() }
     val storageRepository = remember { LanStorageRepository() }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
     var showDeviceDiagnostics by rememberSaveable { mutableStateOf(false) }
+    var aiConversationActive by rememberSaveable { mutableStateOf(false) }
     // The badge is device state, not an optimistic network label.  Keep it
     // current while this composition is alive so powering off the frame (or
     // losing either AP or STA reachability) clears a stale "connected" badge.
@@ -95,7 +115,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            CenterAlignedTopAppBar(
+            if (!aiConversationActive) CenterAlignedTopAppBar(
                 title = { Text("墨水屏相册") },
                 navigationIcon = {
                     if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showDeviceDiagnostics)) {
@@ -113,7 +133,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
             )
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            if (!aiConversationActive) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 AppDestination.entries.forEach { destination ->
                     NavigationBarItem(
                         selected = selected == destination,
@@ -124,6 +144,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                             showNetworkConfiguration = false
                             showStorageManagement = false
                             showDeviceDiagnostics = false
+                            aiConversationActive = false
                             onDestinationSelected(destination)
                         },
                         icon = { androidx.compose.material3.Icon(if (selected == destination) destination.selectedIcon else destination.icon, null) },
@@ -139,6 +160,24 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 runtime = localAlbumRuntime,
                 modeSwitchState = modeSwitchState,
                 onSwitchMode = modeSwitchViewModel::switchTo,
+            )
+            AppDestination.AiAlbum -> AiAlbumHost(
+                device = snapshot,
+                modeSwitchState = modeSwitchState,
+                onSwitchMode = modeSwitchViewModel::switchTo,
+                onOpenNetworkSettings = {
+                    showNetworkConfiguration = true
+                    onDestinationSelected(AppDestination.Settings)
+                },
+                aiImageUiState = aiImageState,
+                onRefreshAiImages = aiImageViewModel::refresh,
+                onLoadMoreAiImages = aiImageViewModel::loadMore,
+                onDisplayAiImage = aiImageViewModel::display,
+                onDeleteAiImage = aiImageViewModel::delete,
+                onSaveAiImageToPhone = aiImageViewModel::saveToPhone,
+                onSetAiPlaybackStart = aiImageViewModel::playbackStartUnavailable,
+                onConversationActiveChanged = { aiConversationActive = it },
+                contentPadding = padding,
             )
             AppDestination.Settings -> NetworkSettingsScreen(
                 repository = networkRepository,

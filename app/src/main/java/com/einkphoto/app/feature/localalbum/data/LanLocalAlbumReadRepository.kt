@@ -1,8 +1,6 @@
 package com.einkphoto.app.feature.localalbum.data
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.net.Uri
 import com.einkphoto.app.core.device.DevelopmentApHttpClient
 import com.einkphoto.app.core.device.DeviceCommandResult
 import com.einkphoto.app.core.device.DeviceFeature
@@ -10,6 +8,8 @@ import com.einkphoto.app.core.device.DeviceJob
 import com.einkphoto.app.core.device.DeviceJobId
 import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.core.device.DeviceRejection
+import com.einkphoto.app.core.device.DeviceMediaPreviewCache
+import com.einkphoto.app.core.device.previewCacheFileName
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceTransport
 import com.einkphoto.app.core.device.LanTransportResult
@@ -24,9 +24,8 @@ import com.einkphoto.app.feature.localalbum.model.MediaItem
 import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
 import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
-import java.io.File
-import java.io.FileOutputStream
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -37,6 +36,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.launch
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * Read-only real-device adapter for the local-album overview and device gallery.
@@ -66,12 +66,11 @@ class LanLocalAlbumReadRepository(
     private val mutableActiveJob = MutableStateFlow<DeviceJob?>(null)
     override val activeJob: StateFlow<DeviceJob?> = mutableActiveJob.asStateFlow()
 
-    private val previewCacheDirectory = File(context.cacheDir, "device-media-preview").apply { mkdirs() }
+    private val previewCache = DeviceMediaPreviewCache(context.applicationContext, previewClient)
     private val refreshMutex = Mutex()
     private val displayRequestMutex = Mutex()
     private val repositoryScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val previewJobs = mutableMapOf<String, Job>()
-    private val previewMutex = Mutex()
+    private val previewJobs = ConcurrentHashMap<String, Job>()
 
     override suspend fun refresh(): DeviceCommandResult<Unit> = refreshMutex.withLock {
         refreshPlayback()
@@ -102,13 +101,15 @@ class LanLocalAlbumReadRepository(
 
         // List is the authoritative gallery order. Detail is re-read for each item so that the
         // image name, source size and display profile are never inferred from cache state.
+        val detailedItems = mutableListOf<com.einkphoto.app.core.device.DeviceMediaItem>()
         val resolved = buildList {
             page.items.forEach { listItem ->
                 val detailed = when (val detail = transport.mediaDetail(listItem.mediaId)) {
                     is LanTransportResult.Success -> detail.value
                     is LanTransportResult.Failure -> listItem
                 }
-                add(detailed.toLocalMediaItem(cachedPreviewUri(detailed.mediaId)))
+                detailedItems += detailed
+                add(detailed.toLocalMediaItem(previewCache.cachedUri(detailed.category, detailed.mediaId, detailed.revision)))
             }
         }.toMutableList()
         // A paged gallery may not include an older currently displayed item. Fetch it explicitly
@@ -117,7 +118,8 @@ class LanLocalAlbumReadRepository(
             when (val currentDetail = transport.mediaDetail(currentId)) {
                 is LanTransportResult.Success -> {
                     val detail = currentDetail.value
-                    resolved += detail.toLocalMediaItem(cachedPreviewUri(detail.mediaId))
+                    detailedItems += detail
+                    resolved += detail.toLocalMediaItem(previewCache.cachedUri(detail.category, detail.mediaId, detail.revision))
                 }
                 is LanTransportResult.Failure -> Unit
             }
@@ -136,7 +138,7 @@ class LanLocalAlbumReadRepository(
         // Network download and PNG encoding intentionally happen after the authoritative state
         // is published. A gallery refresh, display request, or navigation never waits on preview
         // generation; each cache miss is processed once in the repository background scope.
-        resolved.forEach { media -> schedulePreviewDecode(media.id.value) }
+        detailedItems.distinctBy { it.mediaId }.forEach(::schedulePreviewDecode)
         DeviceCommandResult.Accepted(Unit)
     }
 
@@ -322,48 +324,23 @@ class LanLocalAlbumReadRepository(
         message = errorCode ?: phase.ifBlank { "等待设备刷新" },
     )
 
-    private fun cachedPreviewUri(mediaId: String): String? {
-        val target = File(previewCacheDirectory, "$mediaId.png")
-        return target.takeIf { it.isFile && it.length() > 0L }?.let(Uri::fromFile)?.toString()
-    }
-
-    private fun schedulePreviewDecode(mediaId: String) {
-        if (cachedPreviewUri(mediaId) != null || previewJobs[mediaId]?.isActive == true) return
-        previewJobs[mediaId] = repositoryScope.launch {
-            // Yield to direct user actions (especially a display request) before optional I/O.
-            delay(500L)
-            val previewUri = previewMutex.withLock { decodeAndCachePreview(mediaId) } ?: return@launch
-            mutableMedia.value = mutableMedia.value.map { item ->
-                if (item.id.value == mediaId) item.copy(previewUri = previewUri) else item
+    private fun schedulePreviewDecode(item: com.einkphoto.app.core.device.DeviceMediaItem) {
+        val mediaId = item.mediaId
+        val key = previewCacheFileName(item.category.name, mediaId, item.revision)
+        if (previewCache.cachedUri(item.category, mediaId, item.revision) != null || previewJobs[key]?.isActive == true) return
+        val job = repositoryScope.launch(start = CoroutineStart.LAZY) {
+            try {
+                // Yield to direct user actions (especially a display request) before optional I/O.
+                delay(500L)
+                val previewUri = previewCache.load(item.category, mediaId, item.revision, item.displayProfile) ?: return@launch
+                mutableMedia.value = mutableMedia.value.map { media ->
+                    if (media.id.value == mediaId && media.revision == item.revision) media.copy(previewUri = previewUri) else media
+                }
+            } finally {
+                previewJobs.remove(key, coroutineContext[Job])
             }
         }
-    }
-
-    /** Downloads and decodes exactly one fixed 192000-byte 4bpp frame into App cache. */
-    private suspend fun decodeAndCachePreview(mediaId: String): String? {
-        val target = File(previewCacheDirectory, "$mediaId.png")
-        if (target.isFile && target.length() > 0L) return Uri.fromFile(target).toString()
-        val frame = previewClient.downloadMediaPreview(mediaId).getOrNull() ?: return null
-        if (frame.size != 192_000) return null
-        return runCatching {
-            val bitmap = Bitmap.createBitmap(800, 480, Bitmap.Config.ARGB_8888)
-            val pixels = IntArray(800 * 480)
-            frame.forEachIndexed { index, packed ->
-                val pixel = index * 2
-                pixels[pixel] = einkColor((packed.toInt() ushr 4) and 0x0f)
-                pixels[pixel + 1] = einkColor(packed.toInt() and 0x0f)
-            }
-            bitmap.setPixels(pixels, 0, 800, 0, 0, 800, 480)
-            val temp = File(previewCacheDirectory, "$mediaId.tmp")
-            FileOutputStream(temp).use { check(bitmap.compress(Bitmap.CompressFormat.PNG, 92, it)) }
-            check(temp.renameTo(target)); bitmap.recycle(); Uri.fromFile(target).toString()
-        }.getOrNull()
-    }
-
-    private fun einkColor(index: Int): Int = when (index) {
-        0 -> 0xff000000.toInt(); 1 -> 0xffffffff.toInt(); 2 -> 0xffffe600.toInt()
-        3 -> 0xffd92d2d.toInt(); 5 -> 0xff245bc6.toInt(); 6 -> 0xff1c9b54.toInt()
-        else -> 0xffffffff.toInt()
+        if (previewJobs.putIfAbsent(key, job) == null) job.start() else job.cancel()
     }
 
     private fun com.einkphoto.app.core.device.DeviceMediaItem.toLocalMediaItem(previewUri: String?): MediaItem = MediaItem(

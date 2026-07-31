@@ -11,6 +11,9 @@ import java.io.FileOutputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 
 /** Versioned device HTTP client. The endpoint is read for every request so AP/STA switching takes effect immediately. */
 class DevelopmentApHttpClient {
@@ -248,10 +251,11 @@ class DevelopmentApHttpClient {
 
     /** Streams a binary response into App-private storage without buffering an image in RAM. */
     suspend fun downloadToFile(path: String, destination: File): Result<DownloadedFile> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
-        runCatching {
-            destination.parentFile?.mkdirs()
-            val temporary = File(destination.parentFile, "${destination.name}.part")
-            temporary.delete()
+        val parent = destination.absoluteFile.parentFile
+        parent?.mkdirs()
+        val temporary = File(parent, "${destination.name}.part")
+        temporary.delete()
+        try {
             val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Connection", "close")
@@ -260,23 +264,39 @@ class DevelopmentApHttpClient {
             }
             try {
                 require(connection.responseCode in 200..299) { "HTTP ${connection.responseCode}" }
-                val mimeType = connection.contentType?.substringBefore(';')?.trim().orEmpty()
-                require(mimeType == "image/jpeg" || mimeType == "image/png") { "unexpected source MIME type" }
+                val mimeType = connection.contentType?.substringBefore(';')?.trim()?.lowercase().orEmpty()
+                require(mimeType in SUPPORTED_SOURCE_MIME_TYPES) { "unexpected source MIME type" }
                 val expectedLength = connection.contentLengthLong
+                require(expectedLength < 0L || expectedLength in 1..MAX_MEDIA_SOURCE_BYTES) { "source_too_large" }
                 val written = connection.inputStream.use { input ->
-                    FileOutputStream(temporary).use { output -> input.copyTo(output, bufferSize = 16 * 1024) }
+                    FileOutputStream(temporary).use { output ->
+                        val buffer = ByteArray(16 * 1024)
+                        var total = 0L
+                        while (true) {
+                            currentCoroutineContext().ensureActive()
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            require(total <= MAX_MEDIA_SOURCE_BYTES) { "source_too_large" }
+                            output.write(buffer, 0, count)
+                        }
+                        total
+                    }
                 }
                 require(expectedLength < 0 || expectedLength == written) { "incomplete source response" }
                 require(written > 0L) { "empty source response" }
-                destination.delete()
+                require(!destination.exists() || destination.delete()) { "unable to replace source cache" }
                 require(temporary.renameTo(destination)) { "unable to commit source cache" }
-                DownloadedFile(mimeType, written, connection.getHeaderField("ETag"))
-            } catch (error: Throwable) {
-                temporary.delete()
-                throw error
+                Result.success(DownloadedFile(mimeType, written, connection.getHeaderField("ETag")))
             } finally {
                 connection.disconnect()
             }
+        } catch (error: CancellationException) {
+            temporary.delete()
+            throw error
+        } catch (error: Throwable) {
+            temporary.delete()
+            Result.failure(error)
         }
     } }
 
@@ -285,6 +305,9 @@ class DevelopmentApHttpClient {
         val deviceHttpMutex = Mutex()
     }
 }
+
+internal const val MAX_MEDIA_SOURCE_BYTES: Long = 5L * 1024L * 1024L
+private val SUPPORTED_SOURCE_MIME_TYPES = setOf("image/jpeg", "image/png")
 
 private fun multipartHeader(boundary: String, name: String, filename: String, contentType: String): ByteArray =
     ("--$boundary\r\nContent-Disposition: form-data; name=\"$name\"; filename=\"$filename\"\r\n" +
@@ -437,7 +460,7 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         val safeId = safeMediaId(mediaId) ?: return LanTransportResult.Failure(DeviceRejection.Unsupported)
         return client.downloadToFile("/api/v1/media/$safeId/source", destination).fold(
             onSuccess = { file -> LanTransportResult.Success(DeviceMediaSource(safeId, file.mimeType, file.sizeBytes, file.eTag, destination)) },
-            onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+            onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
         )
     }
 
