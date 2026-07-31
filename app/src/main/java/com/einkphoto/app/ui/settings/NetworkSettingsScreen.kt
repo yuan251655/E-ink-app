@@ -46,6 +46,8 @@ import com.einkphoto.app.feature.settings.storage.StorageActionResult
 import com.einkphoto.app.feature.settings.storage.StorageHealth
 import com.einkphoto.app.feature.settings.storage.StorageRepository
 import com.einkphoto.app.feature.settings.storage.StorageSnapshot
+import com.einkphoto.app.feature.settings.diagnostics.LanDeviceLogRepository
+import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.ui.components.pressFeedbackClickable
 import kotlinx.coroutines.launch
 
@@ -59,10 +61,14 @@ fun NetworkSettingsScreen(
     showStorageManagement: Boolean,
     onOpenStorageManagement: () -> Unit,
     storageRepository: StorageRepository,
+    showDeviceDiagnostics: Boolean,
+    onOpenDeviceDiagnostics: () -> Unit,
+    deviceSnapshot: DeviceSnapshot,
 ) {
     if (showNetworkConfiguration) NetworkConfigurationPage(repository, contentPadding)
     else if (showStorageManagement) StorageManagementPage(storageRepository, contentPadding)
-    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement)
+    else if (showDeviceDiagnostics) DeviceDiagnosticsPage(repository, storageRepository, deviceSnapshot, contentPadding)
+    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenDeviceDiagnostics)
 }
 
 @Composable
@@ -71,6 +77,7 @@ private fun SettingsHome(
     contentPadding: PaddingValues,
     onOpenNetwork: () -> Unit,
     onOpenStorageManagement: () -> Unit,
+    onOpenDeviceDiagnostics: () -> Unit,
 ) {
     val state by repository.snapshot.collectAsState()
     LaunchedEffect(repository) { repository.refresh() }
@@ -94,8 +101,36 @@ private fun SettingsHome(
                 }
             }
         }
+        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenDeviceDiagnostics)) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("设备诊断", style = MaterialTheme.typography.titleMedium)
+                    Text("查看设备、网络、TF 卡和显示状态", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
         Text("后续将在这里增加电源、轮播和系统设置。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
+}
+
+@Composable
+private fun DeviceDiagnosticsPage(
+    networkRepository: NetworkRepository,
+    storageRepository: StorageRepository,
+    deviceSnapshot: DeviceSnapshot,
+    contentPadding: PaddingValues,
+) {
+    val network by networkRepository.snapshot.collectAsState()
+    val storage by storageRepository.snapshot.collectAsState()
+    val logRepository = remember { LanDeviceLogRepository() }
+    val logs by logRepository.entries.collectAsState()
+    LaunchedEffect(networkRepository, storageRepository) {
+        networkRepository.refresh()
+        storageRepository.refresh()
+        logRepository.refresh()
+    }
+    DeviceDiagnosticsScreen(deviceSnapshot, network, storage, logs, contentPadding)
 }
 
 @Composable

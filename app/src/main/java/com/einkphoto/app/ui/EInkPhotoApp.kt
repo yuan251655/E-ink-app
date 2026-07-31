@@ -53,6 +53,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
     val storageRepository = remember { LanStorageRepository() }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
+    var showDeviceDiagnostics by rememberSaveable { mutableStateOf(false) }
     // The badge is device state, not an optimistic network label.  Keep it
     // current while this composition is alive so powering off the frame (or
     // losing either AP or STA reachability) clears a stale "connected" badge.
@@ -65,9 +66,10 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         }
     }
 
-    BackHandler(enabled = selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement)) {
+    BackHandler(enabled = selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showDeviceDiagnostics)) {
         showNetworkConfiguration = false
         showStorageManagement = false
+        showDeviceDiagnostics = false
     }
 
     Scaffold(
@@ -77,10 +79,11 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
             CenterAlignedTopAppBar(
                 title = { Text("墨水屏相册") },
                 navigationIcon = {
-                    if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement)) {
+                    if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showDeviceDiagnostics)) {
                         IconButton(onClick = {
                             showNetworkConfiguration = false
                             showStorageManagement = false
+                            showDeviceDiagnostics = false
                         }) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to settings")
                         }
@@ -96,10 +99,12 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                     NavigationBarItem(
                         selected = selected == destination,
                         onClick = {
-                            if (destination != AppDestination.Settings) {
-                                showNetworkConfiguration = false
-                                showStorageManagement = false
-                            }
+                            // A bottom-tab selection always enters the settings home.
+                            // This prevents a previously opened sub-page from being
+                            // restored unexpectedly after changing tabs or restarting.
+                            showNetworkConfiguration = false
+                            showStorageManagement = false
+                            showDeviceDiagnostics = false
                             onDestinationSelected(destination)
                         },
                         icon = { androidx.compose.material3.Icon(if (selected == destination) destination.selectedIcon else destination.icon, null) },
@@ -119,6 +124,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 showStorageManagement = showStorageManagement,
                 onOpenStorageManagement = { showStorageManagement = true },
                 storageRepository = storageRepository,
+                showDeviceDiagnostics = showDeviceDiagnostics,
+                onOpenDeviceDiagnostics = { showDeviceDiagnostics = true },
+                deviceSnapshot = snapshot,
             )
             else -> FeaturePlaceholderScreen(destination = selected, contentPadding = padding)
         }
