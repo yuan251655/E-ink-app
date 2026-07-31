@@ -1,6 +1,7 @@
 package com.einkphoto.app.ui.localalbum
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -67,6 +68,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.selected
@@ -98,6 +101,12 @@ import com.einkphoto.app.feature.localalbum.model.FitMode
 import com.einkphoto.app.feature.localalbum.model.ConversionDraft
 import com.einkphoto.app.feature.localalbum.model.ConversionStage
 import com.einkphoto.app.ui.components.pressFeedbackClickable
+import com.einkphoto.app.ui.components.ModeFeatureHeader
+import com.einkphoto.app.ui.components.ModeSwitchStatusCard
+import com.einkphoto.app.ui.components.crossFeatureDisplayText
+import com.einkphoto.app.ui.components.modeCoverDrawableRes
+import com.einkphoto.app.feature.mode.ModeSwitchUiState
+import com.einkphoto.app.core.device.DeviceContentKind
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
@@ -112,8 +121,13 @@ internal fun LocalAlbumOverviewScreen(
     onPlayback: () -> Unit,
     onBatch: () -> Unit,
     onMedia: (MediaId) -> Unit,
+    modeSwitchState: ModeSwitchUiState,
+    onSwitchMode: (DeviceFeature) -> Unit,
 ) {
-    val currentMedia = state.currentMedia
+    val currentOwner = state.device.currentContent?.ownerFeature ?: state.currentDisplay.feature
+    val ownsCurrentContent = currentOwner == DeviceFeature.LocalAlbum
+    val showingModeCover = ownsCurrentContent && state.device.currentContent?.kind == DeviceContentKind.ModeCover
+    val currentMedia = state.currentMedia.takeIf { ownsCurrentContent }
     // The effect is disposed automatically when this overview leaves composition. The device is
     // authoritative; polling keeps the status card in sync after an automatic display change.
     LaunchedEffect(Unit) {
@@ -122,25 +136,56 @@ internal fun LocalAlbumOverviewScreen(
             delay(15_000)
         }
     }
-    ScreenList(title = "本地相册", subtitle = "管理手机导入与设备中的照片") {
+    ScreenList(
+        title = "本地相册",
+        subtitle = "管理手机导入与设备中的照片",
+        headerContent = {
+            ModeFeatureHeader("本地相册", DeviceFeature.LocalAlbum, state.device, modeSwitchState, onSwitchMode)
+        },
+    ) {
+        item { ModeSwitchStatusCard(DeviceFeature.LocalAlbum, modeSwitchState) }
         item {
             SectionTitle("设备当前画面")
             Spacer(Modifier.height(12.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     PlaybackStatusCard(state.playback)
-                    currentMedia?.let { media ->
+                    if (showingModeCover) {
+                        Image(
+                            painter = painterResource(DeviceFeature.LocalAlbum.modeCoverDrawableRes()),
+                            contentDescription = "本地相册模式提示画面",
+                            modifier = Modifier.fillMaxWidth().aspectRatio(5f / 3f),
+                            contentScale = ContentScale.Fit,
+                        )
+                    } else currentMedia?.let { media ->
                         // In real mode this is the source image streamed from the device and
                         // associated with its authoritative current_media_id, never a phone draft.
                         SavedMediaPreview(media, Modifier.fillMaxWidth())
-                    } ?: DemoArtwork(
-                        seed = 1,
-                        description = "设备当前电子纸画面",
-                        modifier = Modifier.fillMaxWidth(),
-                    )
+                    } ?: if (!ownsCurrentContent) {
+                        OutlinedCard(modifier = Modifier.fillMaxWidth().aspectRatio(5f / 3f)) {
+                            Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
+                                Text(
+                                    crossFeatureDisplayText(currentOwner),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    } else {
+                        DemoArtwork(seed = 1, description = "设备当前电子纸画面", modifier = Modifier.fillMaxWidth())
+                    }
                 }
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(currentMedia?.displayName ?: "当前画面暂不可用", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        when {
+                            showingModeCover -> "本地相册模式提示画面"
+                            currentMedia != null -> currentMedia.displayName
+                            ownsCurrentContent -> "当前画面暂不可用"
+                            else -> crossFeatureDisplayText(currentOwner)
+                        },
+                        style = MaterialTheme.typography.titleLarge,
+                    )
                     Text(
                         currentDisplaySummary(state),
                         style = MaterialTheme.typography.bodyMedium,
@@ -164,27 +209,14 @@ internal fun LocalAlbumOverviewScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = { viewModel.displayPrevious() },
-                            enabled = !state.actionsLocked && state.media.isNotEmpty(),
+                            enabled = ownsCurrentContent && state.device.activeFeature == DeviceFeature.LocalAlbum && !state.actionsLocked && !modeSwitchState.switching && state.media.isNotEmpty(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                         ) { Text("上一张") }
                         OutlinedButton(
                             onClick = { viewModel.displayNext() },
-                            enabled = !state.actionsLocked && state.media.isNotEmpty(),
+                            enabled = ownsCurrentContent && state.device.activeFeature == DeviceFeature.LocalAlbum && !state.actionsLocked && !modeSwitchState.switching && state.media.isNotEmpty(),
                             modifier = Modifier.weight(1f).heightIn(min = 48.dp),
                         ) { Text("下一张") }
-                    }
-                }
-            }
-        }
-        if (state.device.activeFeature != DeviceFeature.LocalAlbum) {
-            item {
-                OutlinedCard(border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("设备当前是${state.device.activeFeature.label()}", style = MaterialTheme.typography.titleMedium)
-                        Text("进入本页面不会自动切换。只有确认后才会向设备提交功能切换任务。")
-                        Button(onClick = viewModel::switchToLocalAlbum, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text("切换到本地相册")
-                        }
                     }
                 }
             }
@@ -193,7 +225,7 @@ internal fun LocalAlbumOverviewScreen(
             Button(
                 onClick = onImport,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                enabled = !state.actionsLocked,
+                enabled = !state.actionsLocked && !modeSwitchState.switching,
             ) {
                 Icon(Icons.Outlined.AddPhotoAlternate, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
@@ -201,12 +233,12 @@ internal fun LocalAlbumOverviewScreen(
             }
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onPlayback, enabled = !state.actionsLocked, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                OutlinedButton(onClick = onPlayback, enabled = !state.actionsLocked && !modeSwitchState.switching, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                     Icon(Icons.Outlined.Schedule, contentDescription = null)
                     Spacer(Modifier.size(6.dp))
                     Text("轮播设置")
                 }
-                OutlinedButton(onClick = onBatch, enabled = !state.actionsLocked, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                OutlinedButton(onClick = onBatch, enabled = !state.actionsLocked && !modeSwitchState.switching, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
                     Icon(Icons.Outlined.Collections, contentDescription = null)
                     Spacer(Modifier.size(6.dp))
                     Text("管理图片")
@@ -1053,6 +1085,7 @@ private fun ScreenList(
     title: String,
     subtitle: String,
     onBack: (() -> Unit)? = null,
+    headerContent: (@Composable () -> Unit)? = null,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
 ) {
     LazyColumn(
@@ -1061,7 +1094,8 @@ private fun ScreenList(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item {
-            if (onBack != null) SubpageHeader(title, subtitle, onBack)
+            if (headerContent != null) headerContent()
+            else if (onBack != null) SubpageHeader(title, subtitle, onBack)
             else {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)

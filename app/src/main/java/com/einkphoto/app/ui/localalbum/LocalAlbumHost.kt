@@ -31,6 +31,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.einkphoto.app.core.device.DeviceCommandResult
 import com.einkphoto.app.core.device.DeviceSession
+import com.einkphoto.app.core.device.DeviceFeature
+import com.einkphoto.app.feature.mode.ModeSwitchUiState
 import com.einkphoto.app.feature.localalbum.LocalAlbumViewModel
 import com.einkphoto.app.feature.localalbum.data.DemoLocalAlbumController
 import com.einkphoto.app.feature.localalbum.data.LocalAlbumDemoDependencies
@@ -55,6 +57,8 @@ fun LocalAlbumHost(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
     demoController: DemoLocalAlbumController? = null,
+    modeSwitchState: ModeSwitchUiState = ModeSwitchUiState(),
+    onSwitchMode: (DeviceFeature) -> Unit = {},
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
@@ -94,6 +98,8 @@ fun LocalAlbumHost(
                 onPlayback = { navigate(LocalAlbumRoute.Playback) },
                 onBatch = { navigate(LocalAlbumRoute.Batch) },
                 onMedia = { navigate(LocalAlbumRoute.Detail(it)) },
+                modeSwitchState = modeSwitchState,
+                onSwitchMode = onSwitchMode,
             )
             LocalAlbumRoute.Library -> DeviceLibraryScreen(state, back, { navigate(LocalAlbumRoute.Batch) }) {
                 navigate(LocalAlbumRoute.Detail(it))
@@ -377,12 +383,16 @@ fun LocalAlbumDemoHost(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
     runtime: LocalAlbumDemoRuntime = rememberLocalAlbumDemoRuntime(),
+    modeSwitchState: ModeSwitchUiState = ModeSwitchUiState(),
+    onSwitchMode: (DeviceFeature) -> Unit = {},
 ) {
     LocalAlbumHost(
         viewModel = runtime.viewModel,
         contentPadding = contentPadding,
         modifier = modifier,
         demoController = runtime.demoController,
+        modeSwitchState = modeSwitchState,
+        onSwitchMode = onSwitchMode,
     )
 }
 

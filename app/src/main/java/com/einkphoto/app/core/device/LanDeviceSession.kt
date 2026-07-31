@@ -12,6 +12,21 @@ interface LanDeviceTransport {
     suspend fun health(): LanTransportResult<LanHealth>
     suspend fun capabilities(): LanTransportResult<DeviceCapabilities>
     suspend fun status(): LanTransportResult<LanStatus>
+    suspend fun mode(): LanTransportResult<DeviceModeSnapshot> = when (val current = status()) {
+        is LanTransportResult.Success -> LanTransportResult.Success(
+            DeviceModeSnapshot(
+                activeFeature = current.value.activeFeature,
+                pendingFeature = null,
+                state = DeviceModeState.Idle,
+                revision = current.value.modeRevision,
+                switchJobId = null,
+                currentContent = current.value.currentMediaId?.let {
+                    DeviceCurrentContent(DeviceContentKind.Media, current.value.activeFeature, null, it, null)
+                },
+            ),
+        )
+        is LanTransportResult.Failure -> current
+    }
 
     /** Read-only endpoints are exposed here for later feature repositories, not directly to UI. */
     suspend fun networkStatus(): LanTransportResult<LanNetworkStatus> =
@@ -62,7 +77,11 @@ interface LanDeviceTransport {
         order: String,
     ): PlaybackTransportResult = PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
 
-    suspend fun switchFeature(feature: DeviceFeature, requestId: String): LanTransportResult<DeviceJobId>
+    suspend fun switchFeature(
+        feature: DeviceFeature,
+        requestId: String,
+        expectedRevision: Long,
+    ): LanTransportResult<DeviceJobId>
 }
 
 data class LanHealth(val deviceId: String, val displayName: String, val apiVersion: String, val ready: Boolean)
@@ -75,6 +94,15 @@ data class LanStatus(
     val currentMediaId: String? = null,
     /** Current mode revision required by the display request's optimistic-concurrency contract. */
     val modeRevision: Long = 0L,
+)
+
+data class DeviceModeSnapshot(
+    val activeFeature: DeviceFeature,
+    val pendingFeature: DeviceFeature?,
+    val state: DeviceModeState,
+    val revision: Long,
+    val switchJobId: DeviceJobId?,
+    val currentContent: DeviceCurrentContent?,
 )
 
 sealed interface LanTransportResult<out T> {
@@ -98,7 +126,22 @@ class LanDeviceSession(private val transport: LanDeviceTransport) : DeviceSessio
         if (!health.ready) return@withLock rejectOffline()
         val capabilities = transport.capabilities().orReject() ?: return@withLock rejectOffline()
         val status = transport.status().orReject() ?: return@withLock rejectOffline()
-        val updated = DeviceSnapshot(health.deviceId, health.displayName, false, status.connection, status.activeFeature, status.displayBusy, status.storageFreeBytes, capabilities)
+        val mode = transport.mode().orReject() ?: return@withLock rejectOffline()
+        val updated = DeviceSnapshot(
+            deviceId = health.deviceId,
+            displayName = health.displayName,
+            isDemo = false,
+            connection = status.connection,
+            activeFeature = mode.activeFeature,
+            displayBusy = status.displayBusy,
+            storageFreeBytes = status.storageFreeBytes,
+            capabilities = capabilities,
+            pendingFeature = mode.pendingFeature,
+            modeState = mode.state,
+            modeRevision = mode.revision,
+            modeSwitchJobId = mode.switchJobId,
+            currentContent = mode.currentContent,
+        )
         mutableSnapshot.value = updated
         DeviceCommandResult.Accepted(updated)
     }
@@ -107,13 +150,30 @@ class LanDeviceSession(private val transport: LanDeviceTransport) : DeviceSessio
         val current = snapshot.value
         if (current.connection == DeviceConnectionState.Sleeping) return DeviceCommandResult.Rejected(DeviceRejection.Sleeping)
         if (current.connection != DeviceConnectionState.Online) return DeviceCommandResult.Rejected(DeviceRejection.Offline)
+        if (current.modeState == DeviceModeState.Switching) return DeviceCommandResult.Rejected(DeviceRejection.ModeSwitchBusy)
         if (current.displayBusy) return DeviceCommandResult.Rejected(DeviceRejection.DisplayBusy)
+        if (current.activeFeature == feature) {
+            return DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
+        }
+        val authoritativeMode = when (val result = transport.mode()) {
+            is LanTransportResult.Success -> result.value
+            is LanTransportResult.Failure -> return DeviceCommandResult.Rejected(result.rejection)
+        }
+        if (authoritativeMode.state == DeviceModeState.Switching) {
+            return DeviceCommandResult.Rejected(DeviceRejection.ModeSwitchBusy)
+        }
         val requestId = "mode-${System.currentTimeMillis()}-${feature.name}"
-        return when (val result = transport.switchFeature(feature, requestId)) {
+        return when (val result = transport.switchFeature(feature, requestId, authoritativeMode.revision)) {
             is LanTransportResult.Success -> DeviceCommandResult.Accepted(result.value)
             is LanTransportResult.Failure -> DeviceCommandResult.Rejected(result.rejection)
         }
     }
+
+    override suspend fun modeSwitchJob(jobId: DeviceJobId): DeviceCommandResult<DeviceJobSnapshot> =
+        when (val result = transport.jobStatus(jobId)) {
+            is LanTransportResult.Success -> DeviceCommandResult.Accepted(result.value)
+            is LanTransportResult.Failure -> DeviceCommandResult.Rejected(result.rejection)
+        }
 
     private fun <T> LanTransportResult<T>.orReject(): T? = when (this) {
         is LanTransportResult.Success -> value

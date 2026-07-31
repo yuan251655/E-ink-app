@@ -23,10 +23,13 @@ class FakeDeviceSessionTest {
 
         assertTrue(result is DeviceCommandResult.Accepted)
         assertEquals(DeviceFeature.LocalAlbum, session.snapshot.value.activeFeature)
+        assertEquals(DeviceModeState.Switching, session.snapshot.value.modeState)
 
         session.finishFeatureSwitch(success = true)
 
         assertEquals(DeviceFeature.AiAlbum, session.snapshot.value.activeFeature)
+        assertEquals(DeviceContentKind.ModeCover, session.snapshot.value.currentContent?.kind)
+        assertEquals(DeviceFeature.AiAlbum, session.snapshot.value.currentContent?.ownerFeature)
     }
 
     @Test

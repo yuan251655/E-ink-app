@@ -13,4 +13,7 @@ interface DeviceSession {
 
     /** A feature changes only through this explicit user-triggered command. */
     suspend fun requestFeatureSwitch(feature: DeviceFeature): DeviceCommandResult<DeviceJobId>
+
+    /** Reads one device-authoritative asynchronous mode-switch job. */
+    suspend fun modeSwitchJob(jobId: DeviceJobId): DeviceCommandResult<DeviceJobSnapshot>
 }

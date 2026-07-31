@@ -92,6 +92,13 @@ class LanLocalAlbumReadRepository(
             is LanTransportResult.Success -> result.value
             is LanTransportResult.Failure -> return DeviceCommandResult.Rejected(result.rejection)
         }
+        val mode = when (val result = transport.mode()) {
+            is LanTransportResult.Success -> result.value
+            is LanTransportResult.Failure -> return DeviceCommandResult.Rejected(result.rejection)
+        }
+        val localCurrentMediaId = mode.currentContent
+            ?.takeIf { it.ownerFeature == DeviceFeature.LocalAlbum && it.category == com.einkphoto.app.core.device.DeviceMediaCategory.Local }
+            ?.mediaId
 
         // List is the authoritative gallery order. Detail is re-read for each item so that the
         // image name, source size and display profile are never inferred from cache state.
@@ -106,7 +113,7 @@ class LanLocalAlbumReadRepository(
         }.toMutableList()
         // A paged gallery may not include an older currently displayed item. Fetch it explicitly
         // so the homepage always follows the device authority rather than a page-local guess.
-        status.currentMediaId?.takeIf { currentId -> resolved.none { it.id.value == currentId } }?.let { currentId ->
+        localCurrentMediaId?.takeIf { currentId -> resolved.none { it.id.value == currentId } }?.let { currentId ->
             when (val currentDetail = transport.mediaDetail(currentId)) {
                 is LanTransportResult.Success -> {
                     val detail = currentDetail.value
@@ -117,11 +124,11 @@ class LanLocalAlbumReadRepository(
         }
         mutableMedia.value = resolved
         mutableCurrentDisplay.value = CurrentDisplay(
-            mediaId = status.currentMediaId?.let(::MediaId),
-            feature = status.activeFeature,
+            mediaId = localCurrentMediaId?.let(::MediaId),
+            feature = mode.currentContent?.ownerFeature ?: mode.activeFeature,
             result = when {
                 status.displayBusy -> DisplayResult.Refreshing
-                status.currentMediaId != null -> DisplayResult.Success
+                mode.currentContent != null -> DisplayResult.Success
                 else -> DisplayResult.Idle
             },
             lastSuccessfulRefreshEpochMillis = null,
@@ -245,7 +252,11 @@ class LanLocalAlbumReadRepository(
                 is LanTransportResult.Success -> result.value
                 is LanTransportResult.Failure -> return@withLock DeviceCommandResult.Rejected(result.rejection)
             }
-            if (status.activeFeature != DeviceFeature.LocalAlbum) {
+            val mode = when (val result = transport.mode()) {
+                is LanTransportResult.Success -> result.value
+                is LanTransportResult.Failure -> return@withLock DeviceCommandResult.Rejected(result.rejection)
+            }
+            if (mode.activeFeature != DeviceFeature.LocalAlbum || mode.state == com.einkphoto.app.core.device.DeviceModeState.Switching) {
                 return@withLock DeviceCommandResult.Rejected(DeviceRejection.FeatureNotActive)
             }
             if (status.displayBusy) return@withLock DeviceCommandResult.Rejected(DeviceRejection.DisplayBusy)
@@ -254,7 +265,7 @@ class LanLocalAlbumReadRepository(
             val job = when (val result = transport.displayMedia(
                 mediaId = mediaId.value,
                 requestId = requestId,
-                expectedModeRevision = status.modeRevision,
+                expectedModeRevision = mode.revision,
                 afterDisplay = if (afterDisplay == AfterDisplay.Hold) "hold" else "continue",
             )) {
                 is LanTransportResult.Success -> result.value
@@ -262,7 +273,7 @@ class LanLocalAlbumReadRepository(
             }
             mutableActiveJob.value = job.toDeviceJob()
             mutableCurrentDisplay.value = mutableCurrentDisplay.value.copy(
-                feature = status.activeFeature,
+                feature = mode.activeFeature,
                 result = DisplayResult.Refreshing,
             )
             repositoryScope.launch { awaitDisplayTerminalJob(job) }

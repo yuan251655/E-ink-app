@@ -1,10 +1,22 @@
 package com.einkphoto.app.core.device
 
-enum class DeviceFeature {
-    LocalAlbum,
-    AiAlbum,
-    InfoDashboard,
+enum class DeviceFeature(val apiValue: String) {
+    LocalAlbum("local_album"),
+    AiAlbum("ai_album"),
+    InfoDashboard("info_dashboard"),
 }
+
+enum class DeviceModeState { Idle, Switching }
+
+enum class DeviceContentKind { Media, ModeCover, Dashboard, Unknown }
+
+data class DeviceCurrentContent(
+    val kind: DeviceContentKind,
+    val ownerFeature: DeviceFeature,
+    val category: DeviceMediaCategory?,
+    val mediaId: String?,
+    val systemAssetId: String?,
+)
 
 enum class DeviceConnectionState {
     Online,
@@ -45,6 +57,11 @@ data class DeviceSnapshot(
     val displayBusy: Boolean,
     val storageFreeBytes: Long?,
     val capabilities: DeviceCapabilities?,
+    val pendingFeature: DeviceFeature? = null,
+    val modeState: DeviceModeState = DeviceModeState.Idle,
+    val modeRevision: Long = 0L,
+    val modeSwitchJobId: DeviceJobId? = null,
+    val currentContent: DeviceCurrentContent? = null,
 )
 
 @JvmInline
@@ -85,5 +102,8 @@ enum class DeviceRejection {
     StorageNoSpace,
     SourceTooLarge,
     MediaProtected,
+    ModeSwitchBusy,
+    RevisionConflict,
+    TimedOut,
     Unsupported,
 }

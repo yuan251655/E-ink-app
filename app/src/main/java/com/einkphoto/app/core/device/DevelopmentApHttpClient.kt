@@ -347,6 +347,26 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
     )
 
+    override suspend fun mode(): LanTransportResult<DeviceModeSnapshot> = client.get("/api/v1/mode").fold(
+        onSuccess = { root ->
+            val data = root.getJSONObject("data")
+            val current = data.optJSONObject("current_content")
+            LanTransportResult.Success(
+                DeviceModeSnapshot(
+                    activeFeature = featureFromApi(data.opt("active_feature")),
+                    pendingFeature = data.opt("pending_feature")
+                        ?.takeUnless { it == JSONObject.NULL }
+                        ?.let(::featureFromApi),
+                    state = if (data.optString("state") == "switching") DeviceModeState.Switching else DeviceModeState.Idle,
+                    revision = data.optLong("revision", 0L),
+                    switchJobId = data.optString("switch_job_id").takeIf { it.isNotBlank() }?.let(::DeviceJobId),
+                    currentContent = current?.let(::parseCurrentContent),
+                ),
+            )
+        },
+        onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+    )
+
     override suspend fun networkStatus(): LanTransportResult<LanNetworkStatus> = client.get("/api/v1/network/status").fold(
         onSuccess = { root ->
             val data = root.getJSONObject("data")
@@ -509,8 +529,25 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
     }
 
 
-    override suspend fun switchFeature(feature: DeviceFeature, requestId: String): LanTransportResult<DeviceJobId> =
-        LanTransportResult.Failure(DeviceRejection.Unsupported)
+    override suspend fun switchFeature(
+        feature: DeviceFeature,
+        requestId: String,
+        expectedRevision: Long,
+    ): LanTransportResult<DeviceJobId> = client.postJson(
+        "/api/v1/mode",
+        JSONObject()
+            .put("request_id", requestId)
+            .put("expected_revision", expectedRevision)
+            .put("target_feature", feature.apiValue),
+    ).fold(
+        onSuccess = { root ->
+            val data = root.optJSONObject("data")
+            val jobId = data?.optString("job_id").orEmpty()
+            if (jobId.isBlank()) LanTransportResult.Failure(DeviceRejection.Unsupported)
+            else LanTransportResult.Success(DeviceJobId(jobId))
+        },
+        onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
+    )
 
     private fun safeMediaId(mediaId: String): String? = mediaId.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,64}")) }
 
@@ -519,6 +556,22 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         1, "1", "ai_album" -> DeviceFeature.AiAlbum
         2, "2", "info_dashboard" -> DeviceFeature.InfoDashboard
         else -> DeviceFeature.LocalAlbum
+    }
+
+    private fun parseCurrentContent(raw: JSONObject): DeviceCurrentContent? {
+        val owner = raw.opt("owner_feature")?.takeUnless { it == JSONObject.NULL } ?: return null
+        return DeviceCurrentContent(
+            kind = when (raw.optString("kind")) {
+                "media" -> DeviceContentKind.Media
+                "mode_cover" -> DeviceContentKind.ModeCover
+                "dashboard" -> DeviceContentKind.Dashboard
+                else -> DeviceContentKind.Unknown
+            },
+            ownerFeature = featureFromApi(owner),
+            category = DeviceMediaCategory.fromApi(raw.optString("category")),
+            mediaId = raw.optString("media_id").takeIf { it.isNotBlank() },
+            systemAssetId = raw.optString("system_asset_id").takeIf { it.isNotBlank() },
+        )
     }
 
     private fun parseMediaItem(raw: JSONObject): DeviceMediaItem? {
@@ -556,20 +609,23 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         val jobId = data.optString("job_id").takeIf { it.isNotBlank() } ?: return null
         return DeviceJobSnapshot(
             jobId = DeviceJobId(jobId),
-            state = when (data.optInt("state", -1)) {
-                0 -> DeviceJobState.Queued
-                1 -> DeviceJobState.Running
-                2 -> DeviceJobState.Success
-                3 -> DeviceJobState.Failed
-                4 -> DeviceJobState.Cancelled
-                5 -> DeviceJobState.TimedOut
-                else -> DeviceJobState.Failed
-            },
+            state = parseJobState(data.opt("state")),
             phase = data.optString("phase").ifBlank { "unknown" },
             progressPercent = data.optInt("progress_percent", 0).coerceIn(0, 100),
             errorCode = data.optString("error_code").takeIf { it.isNotBlank() },
             mediaId = data.optString("media_id").takeIf { it.isNotBlank() },
         )
+    }
+
+    private fun parseJobState(raw: Any?): DeviceJobState = when (raw) {
+        0, "0", "queued" -> DeviceJobState.Queued
+        1, "1", "running", "preparing", "refreshing", "finalizing" -> DeviceJobState.Running
+        2, "2", "success", "completed" -> DeviceJobState.Success
+        3, "3", "failed" -> DeviceJobState.Failed
+        4, "4", "cancelled" -> DeviceJobState.Cancelled
+        5, "5", "timeout", "timed_out" -> DeviceJobState.TimedOut
+        "busy" -> DeviceJobState.Busy
+        else -> DeviceJobState.Failed
     }
 
     private fun parsePlayback(raw: JSONObject?): DevicePlaybackSnapshot? {
@@ -603,6 +659,9 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         error.message?.contains("storage", ignoreCase = true) == true -> DeviceRejection.StorageUnavailable
         error.message?.contains("display_busy", ignoreCase = true) == true -> DeviceRejection.DisplayBusy
         error.message?.contains("media_protected", ignoreCase = true) == true -> DeviceRejection.MediaProtected
+        error.message?.contains("mode_switch_busy", ignoreCase = true) == true -> DeviceRejection.ModeSwitchBusy
+        error.message?.contains("revision_conflict", ignoreCase = true) == true -> DeviceRejection.RevisionConflict
+        error.message?.contains("timeout", ignoreCase = true) == true -> DeviceRejection.TimedOut
         error.message?.contains("unsupported", ignoreCase = true) == true -> DeviceRejection.Unsupported
         else -> DeviceRejection.Offline
     }

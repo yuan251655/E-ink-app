@@ -34,6 +34,7 @@ class FakeDeviceSession(
 
     private var jobSequence = 0
     private var pendingFeatureSwitch: PendingFeatureSwitch? = null
+    private val completedJobs = mutableMapOf<DeviceJobId, DeviceJobSnapshot>()
 
     override suspend fun refreshSnapshot(): DeviceCommandResult<DeviceSnapshot> =
         DeviceCommandResult.Accepted(mutableSnapshot.value)
@@ -51,7 +52,22 @@ class FakeDeviceSession(
 
         val jobId = DeviceJobId("fake-mode-${++jobSequence}")
         pendingFeatureSwitch = PendingFeatureSwitch(jobId, feature)
+        mutableSnapshot.value = current.copy(
+            pendingFeature = feature,
+            modeState = DeviceModeState.Switching,
+            modeSwitchJobId = jobId,
+        )
         return DeviceCommandResult.Accepted(jobId)
+    }
+
+    override suspend fun modeSwitchJob(jobId: DeviceJobId): DeviceCommandResult<DeviceJobSnapshot> {
+        completedJobs[jobId]?.let { return DeviceCommandResult.Accepted(it) }
+        val pending = pendingFeatureSwitch
+        return if (pending?.jobId == jobId) {
+            DeviceCommandResult.Accepted(DeviceJobSnapshot(jobId, DeviceJobState.Running, "refreshing", 55, null, null))
+        } else {
+            DeviceCommandResult.Rejected(DeviceRejection.Unsupported)
+        }
     }
 
     /** Applies the authoritative feature only when the simulated async job succeeds. */
@@ -64,8 +80,35 @@ class FakeDeviceSession(
             message = if (success) "模拟功能切换完成" else "模拟功能切换失败",
         )
         if (success) {
-            mutableSnapshot.value = mutableSnapshot.value.copy(activeFeature = pending.feature)
+            mutableSnapshot.value = mutableSnapshot.value.copy(
+                activeFeature = pending.feature,
+                pendingFeature = null,
+                modeState = DeviceModeState.Idle,
+                modeRevision = mutableSnapshot.value.modeRevision + 1,
+                modeSwitchJobId = null,
+                currentContent = DeviceCurrentContent(
+                    kind = DeviceContentKind.ModeCover,
+                    ownerFeature = pending.feature,
+                    category = DeviceMediaCategory.System,
+                    mediaId = null,
+                    systemAssetId = "mode_cover_${pending.feature.apiValue}",
+                ),
+            )
+        } else {
+            mutableSnapshot.value = mutableSnapshot.value.copy(
+                pendingFeature = null,
+                modeState = DeviceModeState.Idle,
+                modeSwitchJobId = null,
+            )
         }
+        completedJobs[pending.jobId] = DeviceJobSnapshot(
+            jobId = pending.jobId,
+            state = if (success) DeviceJobState.Success else DeviceJobState.Failed,
+            phase = if (success) "completed" else "failed",
+            progressPercent = if (success) 100 else 0,
+            errorCode = if (success) null else "display_failed",
+            mediaId = null,
+        )
         pendingFeatureSwitch = null
         return completed
     }
@@ -85,6 +128,13 @@ class FakeDeviceSession(
             displayBusy = false,
             storageFreeBytes = 2_576_980_377,
             capabilities = capabilities,
+            currentContent = DeviceCurrentContent(
+                kind = DeviceContentKind.Media,
+                ownerFeature = DeviceFeature.LocalAlbum,
+                category = DeviceMediaCategory.Local,
+                mediaId = "media-001",
+                systemAssetId = null,
+            ),
         )
         return when (scenario) {
             FakeDeviceScenario.OnlineLocalAlbum -> base

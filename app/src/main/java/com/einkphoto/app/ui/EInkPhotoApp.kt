@@ -35,6 +35,10 @@ import com.einkphoto.app.ui.model.AppDestination
 import com.einkphoto.app.ui.screens.FeaturePlaceholderScreen
 import com.einkphoto.app.ui.settings.NetworkSettingsScreen
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.einkphoto.app.feature.mode.ModeSwitchViewModel
 import kotlinx.coroutines.delay
 
 @Composable
@@ -49,6 +53,16 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
     val session = remember { LanDeviceSession(HttpLanDeviceTransport()) }
     val snapshot by session.snapshot.collectAsState()
     val localAlbumRuntime = rememberLocalAlbumDemoRuntime(session)
+    val modeSwitchViewModel: ModeSwitchViewModel = viewModel(
+        key = "device-mode-switch",
+        factory = remember(session) {
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = ModeSwitchViewModel(session) as T
+            }
+        },
+    )
+    val modeSwitchState by modeSwitchViewModel.state.collectAsState()
     val networkRepository = remember { LanNetworkRepository() }
     val storageRepository = remember { LanStorageRepository() }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
@@ -64,6 +78,11 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
             session.refreshSnapshot()
             delay(8_000L)
         }
+    }
+    LaunchedEffect(snapshot.modeSwitchJobId, snapshot.pendingFeature) {
+        val jobId = snapshot.modeSwitchJobId
+        val target = snapshot.pendingFeature
+        if (jobId != null && target != null) modeSwitchViewModel.resumePendingSwitch(target, jobId)
     }
 
     BackHandler(enabled = selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showDeviceDiagnostics)) {
@@ -115,7 +134,12 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         },
     ) { padding ->
         when (selected) {
-            AppDestination.LocalAlbum -> LocalAlbumDemoHost(contentPadding = padding, runtime = localAlbumRuntime)
+            AppDestination.LocalAlbum -> LocalAlbumDemoHost(
+                contentPadding = padding,
+                runtime = localAlbumRuntime,
+                modeSwitchState = modeSwitchState,
+                onSwitchMode = modeSwitchViewModel::switchTo,
+            )
             AppDestination.Settings -> NetworkSettingsScreen(
                 repository = networkRepository,
                 contentPadding = padding,
@@ -128,7 +152,13 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onOpenDeviceDiagnostics = { showDeviceDiagnostics = true },
                 deviceSnapshot = snapshot,
             )
-            else -> FeaturePlaceholderScreen(destination = selected, contentPadding = padding)
+            else -> FeaturePlaceholderScreen(
+                destination = selected,
+                contentPadding = padding,
+                device = snapshot,
+                modeSwitchState = modeSwitchState,
+                onSwitchMode = modeSwitchViewModel::switchTo,
+            )
         }
     }
 }
