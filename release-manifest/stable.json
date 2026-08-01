@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "0.1.8",
-  "version_code": 9,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.8.apk",
-  "sha256": "002ce519e5bd81a66f308cc5a51322a944d13bc7c6cebb7bbb177aeb47b178b2",
+  "version_name": "0.1.10",
+  "version_code": 11,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.10.apk",
+  "sha256": "fce21b12f8cf8e1aa0b40d2a2183c2c0207e96bc7e48c97c4596b579606908ee",
   "size_bytes": 11296954,
-  "release_notes": "华为预览兼容：BIN 解码后直接显示内存图像并保存私有 PNG；重启后直接读取本地 PNG，损坏缓存自动重新同步。",
+  "release_notes": "修复华为手机本地相册预览：移除不兼容的 Java 9 读取方法，BIN 可正常下载、解码并保存为手机本地预览。",
   "force_update": false,
   "min_supported_version_code": 1
 }

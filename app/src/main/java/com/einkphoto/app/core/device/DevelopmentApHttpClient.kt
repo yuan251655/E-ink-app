@@ -8,6 +8,7 @@ import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 import java.nio.charset.StandardCharsets
@@ -74,10 +75,22 @@ class DevelopmentApHttpClient {
                         setRequestProperty("Connection", "close")
                     }
                     try {
-                        require(connection.responseCode == HttpURLConnection.HTTP_OK) { "preview unavailable" }
+                        val responseCode = connection.responseCode
+                        if (responseCode != HttpURLConnection.HTTP_OK) {
+                            val deviceReply = connection.errorStream
+                                ?.bufferedReader()
+                                ?.use { it.readText().take(180) }
+                                ?.replace(Regex("[\r\n]+"), " ")
+                                .orEmpty()
+                            Log.w(
+                                "EInkDeviceHttp",
+                                "PREVIEW endpoint=$endpoint HTTP=$responseCode reply=$deviceReply",
+                            )
+                            error("preview HTTP $responseCode")
+                        }
                         val declared = connection.contentLengthLong
                         require(declared < 0L || declared == 192_000L) { "invalid preview size" }
-                        val frame = connection.inputStream.use { input -> input.readNBytes(192_001).also { require(it.size == 192_000) { "invalid preview frame" } } }
+                        val frame = connection.inputStream.use(::readExactPreviewFrame)
                         DeviceEndpointConfig.markEndpointReachable(endpoint)
                         return@runCatching frame
                     } finally { connection.disconnect() }
@@ -328,6 +341,23 @@ private fun multipartHeader(boundary: String, name: String, filename: String, co
         "Content-Type: $contentType\r\n\r\n").toByteArray(StandardCharsets.UTF_8)
 
 private fun safeFilename(value: String): String = value.replace(Regex("[^A-Za-z0-9._-]"), "_").take(80).ifBlank { "source.jpg" }
+
+/**
+ * `InputStream.readNBytes()` is a Java 9 API and is absent from some Android runtimes,
+ * including the Huawei device used for real-device validation. Keep preview transport on the
+ * Android-8-compatible InputStream primitive operations instead.
+ */
+private fun readExactPreviewFrame(input: InputStream): ByteArray {
+    val frame = ByteArray(192_000)
+    var offset = 0
+    while (offset < frame.size) {
+        val count = input.read(frame, offset, frame.size - offset)
+        if (count < 0) break
+        if (count > 0) offset += count
+    }
+    require(offset == frame.size) { "invalid preview frame" }
+    return frame
+}
 
 data class DownloadedFile(val mimeType: String, val sizeBytes: Long, val eTag: String?)
 
