@@ -1,6 +1,7 @@
 package com.einkphoto.app.feature.settings.network
 
 import com.einkphoto.app.core.device.DevelopmentApHttpClient
+import com.einkphoto.app.core.device.DeviceEndpointConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,9 +18,11 @@ class LanNetworkRepository(private val client: DevelopmentApHttpClient = Develop
             val data = root.getJSONObject("data"); val ap = data.getJSONObject("ap"); val sta = data.getJSONObject("sta")
             val state = when (sta.optString("state")) { "connected" -> StaState.Connected; "connecting" -> StaState.Connecting; "failed" -> StaState.Failed; else -> StaState.Disabled }
             val internet = when (data.optJSONObject("internet")?.optString("state")) { "reachable" -> InternetState.Reachable; "unreachable" -> InternetState.Unreachable; else -> InternetState.Unknown }
+            val staIp = sta.optString("ip").takeIf { it.isNotBlank() }
+            if (state == StaState.Connected && staIp != null) DeviceEndpointConfig.rememberStaAddress(staIp)
             mutableSnapshot.value = NetworkSnapshot(data.optString("api_version", "v1"), data.optString("device_id", "unknown"), data.optLong("revision", 0),
                 ApStatus(ap.optBoolean("enabled"), ap.optString("ssid"), ap.optString("ip"), ap.optInt("channel"), ap.optInt("connected_clients")),
-                StaStatus(sta.optBoolean("enabled"), state, sta.optString("ssid").takeIf { it.isNotBlank() }, sta.optString("ip").takeIf { it.isNotBlank() }, sta.optString("gateway").takeIf { it.isNotBlank() }, if (sta.has("rssi_dbm")) sta.optInt("rssi_dbm") else null, sta.optString("last_error_code").takeIf { it.isNotBlank() }), internet)
+                StaStatus(sta.optBoolean("enabled"), state, sta.optString("ssid").takeIf { it.isNotBlank() }, staIp, sta.optString("gateway").takeIf { it.isNotBlank() }, if (sta.has("rssi_dbm")) sta.optInt("rssi_dbm") else null, sta.optString("last_error_code").takeIf { it.isNotBlank() }), internet)
             NetworkActionResult.Accepted
         }, onFailure = { NetworkActionResult.Rejected("network_unavailable", "无法读取设备网络状态：请先连接 esp_network") })
 

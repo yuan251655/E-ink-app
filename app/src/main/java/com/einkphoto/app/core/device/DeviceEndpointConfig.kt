@@ -14,7 +14,8 @@ import java.net.URI
 object DeviceEndpointConfig {
     private const val defaultApBaseUrl = "http://192.168.4.1"
     private const val preferenceName = "device_endpoint"
-    private const val preferenceKey = "api_base_url"
+    private const val activePreferenceKey = "active_api_base_url"
+    private const val staPreferenceKey = "sta_api_base_url"
     @Volatile private var preferences: android.content.SharedPreferences? = null
 
     /** Call once at process startup.  Requests always read the current saved value. */
@@ -23,16 +24,36 @@ object DeviceEndpointConfig {
     }
 
     val apiBaseUrl: String
-        get() = (preferences?.getString(preferenceKey, null) ?: BuildConfig.DEVICE_API_BASE_URL)
+        get() = (preferences?.getString(activePreferenceKey, null) ?: BuildConfig.DEVICE_API_BASE_URL)
             .trimEnd('/')
             .takeIf(::isSafeBaseUrl)
             ?: defaultApBaseUrl
 
+    /** Try the last working address first, then both permanent recovery routes. */
+    val endpointCandidates: List<String>
+        get() = buildList {
+            add(apiBaseUrl)
+            add(defaultApBaseUrl)
+            preferences?.getString(staPreferenceKey, null)
+                ?.trimEnd('/')
+                ?.takeIf(::isSafeBaseUrl)
+                ?.let(::add)
+        }.distinct()
+
     fun saveApiBaseUrl(value: String): Boolean {
         val safeValue = value.trimEnd('/').takeIf(::isSafeBaseUrl) ?: return false
-        preferences?.edit()?.putString(preferenceKey, safeValue)?.apply()
+        preferences?.edit()?.putString(activePreferenceKey, safeValue)?.apply()
         return preferences != null
     }
+
+    /** A STA IP comes only from the device's own network-status response. */
+    fun rememberStaAddress(ipAddress: String): Boolean {
+        val safeValue = "http://${ipAddress.trim()}".trimEnd('/').takeIf(::isSafeBaseUrl) ?: return false
+        preferences?.edit()?.putString(staPreferenceKey, safeValue)?.apply()
+        return preferences != null
+    }
+
+    fun markEndpointReachable(value: String): Boolean = saveApiBaseUrl(value)
 
     fun useApAddress(): Boolean = saveApiBaseUrl(defaultApBaseUrl)
 

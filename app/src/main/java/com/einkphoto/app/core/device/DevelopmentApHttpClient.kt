@@ -26,9 +26,10 @@ class DevelopmentApHttpClient {
             // turn an existing TF gallery into an empty App screen.
             val readTimeoutMs = if (path.startsWith("/api/v1/media?")) 30_000 else 12_000
             var lastError: Throwable? = null
-            for (attempt in 0..2) {
-                try {
-                val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+            for (endpoint in DeviceEndpointConfig.endpointCandidates) {
+                for (attempt in 0..2) {
+                    try {
+                val connection = (URL(endpoint + path).openConnection() as HttpURLConnection).apply {
                     // The ESP may take several seconds to re-open its single HTTP slot after a
                     // TF transaction. Three seconds turned a valid, late 200 response into a
                     // false "offline" result before batch upload could even start.
@@ -41,13 +42,15 @@ class DevelopmentApHttpClient {
                     val json = stream.bufferedReader().use { it.readText() }
                     val root = JSONObject(json)
                     if (!root.optBoolean("ok", false)) error(root.optString("code", "request_failed"))
+                    DeviceEndpointConfig.markEndpointReachable(endpoint)
                     return@runCatching root
                 } finally {
                     connection.disconnect()
                 }
-                } catch (error: Throwable) {
-                    lastError = error
-                    if (attempt < 2) Thread.sleep(500L * (attempt + 1))
+                    } catch (error: Throwable) {
+                        lastError = error
+                        if (attempt < 2) Thread.sleep(500L * (attempt + 1))
+                    }
                 }
             }
             throw requireNotNull(lastError)
