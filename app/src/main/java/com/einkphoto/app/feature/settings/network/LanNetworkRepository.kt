@@ -24,7 +24,7 @@ class LanNetworkRepository(private val client: DevelopmentApHttpClient = Develop
                 ApStatus(ap.optBoolean("enabled"), ap.optString("ssid"), ap.optString("ip"), ap.optInt("channel"), ap.optInt("connected_clients")),
                 StaStatus(sta.optBoolean("enabled"), state, sta.optString("ssid").takeIf { it.isNotBlank() }, staIp, sta.optString("gateway").takeIf { it.isNotBlank() }, if (sta.has("rssi_dbm")) sta.optInt("rssi_dbm") else null, sta.optString("last_error_code").takeIf { it.isNotBlank() }), internet)
             NetworkActionResult.Accepted
-        }, onFailure = { NetworkActionResult.Rejected("network_unavailable", "无法读取设备网络状态：请先连接 esp_network") })
+        }, onFailure = { NetworkActionResult.Rejected("network_unavailable", "相框未连接：请确认相框已开机，并让手机与相框连接到同一网络后重试") })
 
     override suspend fun scan24Ghz(): Result<List<WifiNetwork>> = client.postJson("/api/v1/network/scan", JSONObject()).map { root ->
         val items = root.getJSONObject("data").optJSONArray("networks")
