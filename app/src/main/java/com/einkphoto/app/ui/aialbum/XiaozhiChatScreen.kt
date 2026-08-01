@@ -1,5 +1,6 @@
 package com.einkphoto.app.ui.aialbum
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -22,6 +23,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -29,6 +32,7 @@ import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -55,6 +59,7 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.Role
@@ -95,9 +100,12 @@ internal fun chatGenerationNotice(prompt: String, online: Boolean): String? = wh
     else -> null
 }
 
-/** Pure layout rule kept independent from Compose state so compact behavior is easy to test. */
-internal fun useCompactChatInput(widthDp: Float, heightDp: Float): Boolean =
-    widthDp > heightDp || heightDp < 600f
+/**
+ * Keyboard insets must never decide which TextField tree is composed. Some vendor IMEs lose
+ * their InputConnection when a focused field is moved to another parent while the IME appears.
+ */
+internal fun useCompactChatInput(screenWidthDp: Int, orientation: Int): Boolean =
+    orientation == Configuration.ORIENTATION_LANDSCAPE || screenWidthDp < 480
 
 @Composable
 internal fun rememberXiaozhiMessages(): SnapshotStateList<XiaozhiChatMessage> = rememberSaveable(
@@ -138,7 +146,9 @@ internal fun XiaozhiChatScreen(
         if (blocked != null) onNotice(blocked) else generationPrompt = prompt
     }
 
-    BoxWithConstraints(
+    val configuration = LocalConfiguration.current
+    val compactInput = useCompactChatInput(configuration.screenWidthDp, configuration.orientation)
+    Box(
         modifier
             .fillMaxSize()
             .padding(contentPadding)
@@ -146,7 +156,6 @@ internal fun XiaozhiChatScreen(
             .imePadding(),
         contentAlignment = Alignment.TopCenter,
     ) {
-        val compactInput = useCompactChatInput(maxWidth.value, maxHeight.value)
         Column(Modifier.fillMaxSize().widthIn(max = 720.dp)) {
             ChatTopBar(
                 online = online,
@@ -166,7 +175,10 @@ internal fun XiaozhiChatScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 if (messages.isEmpty()) item { EmptyConversation(onSuggestion = onDraftChange) }
-                items(messages, key = { it.id }) { message ->
+                itemsIndexed(messages, key = { _, message -> message.id }) { index, message ->
+                    if (index == 0 || messages[index - 1].timeLabel != message.timeLabel) {
+                        ChatTimestampDivider(message.timeLabel)
+                    }
                     ChatMessageBubble(
                         message = message,
                         onGenerate = { requestGeneration(message.text) },
@@ -330,10 +342,10 @@ private fun ChatMessageBubble(
             XiaozhiAvatar()
             Spacer(Modifier.size(8.dp))
         }
-        Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start, modifier = Modifier.fillMaxWidth(0.78f)) {
+        Column(horizontalAlignment = if (user) Alignment.End else Alignment.Start, modifier = Modifier.fillMaxWidth(0.76f)) {
             Surface(
                 modifier = bubbleModifier,
-                color = if (user) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                color = if (user) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                 shape = if (user) RoundedCornerShape(18.dp, 18.dp, 6.dp, 18.dp) else RoundedCornerShape(18.dp, 18.dp, 18.dp, 6.dp),
                 tonalElevation = if (user) 0.dp else 1.dp,
             ) {
@@ -341,12 +353,11 @@ private fun ChatMessageBubble(
                     message.text,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
                     style = MaterialTheme.typography.bodyLarge,
-                    color = if (user) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface,
+                    color = if (user) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Text(message.timeLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (user) Text(
+            if (user && message.deliveryState != ChatDeliveryState.Sent) {
+                Text(
                     when (message.deliveryState) {
                         ChatDeliveryState.Sending -> "正在发送"
                         ChatDeliveryState.Sent -> "已发送"
@@ -364,6 +375,30 @@ private fun ChatMessageBubble(
                     Text("据此生成图片")
                 }
             }
+        }
+        if (user) {
+            Spacer(Modifier.size(8.dp))
+            UserAvatar()
+        }
+    }
+}
+
+@Composable
+private fun ChatTimestampDivider(label: String) {
+    Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), contentAlignment = Alignment.Center) {
+        Text(label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun UserAvatar() {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.size(36.dp),
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Icon(Icons.Outlined.Person, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(20.dp))
         }
     }
 }

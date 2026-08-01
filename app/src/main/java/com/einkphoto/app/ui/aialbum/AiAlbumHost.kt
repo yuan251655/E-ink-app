@@ -2,6 +2,7 @@ package com.einkphoto.app.ui.aialbum
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -36,7 +37,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -50,6 +50,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
@@ -59,6 +60,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.core.device.DeviceContentKind
 import com.einkphoto.app.core.device.DeviceCurrentContent
@@ -167,7 +169,6 @@ fun AiAlbumHost(
     // rotation/process recreation and a disposed AI host cannot restore it.
     var pendingApiKey by remember { mutableStateOf("") }
     var draft by rememberSaveable { mutableStateOf("") }
-    var interactionMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var chatNotice by rememberSaveable { mutableStateOf<String?>(null) }
     val homeListState = rememberLazyListState()
     val chatListState = rememberLazyListState()
@@ -222,30 +223,8 @@ fun AiAlbumHost(
             modeSwitchState = modeSwitchState,
             onSwitchMode = onSwitchMode,
             contentPadding = contentPadding,
-            draft = draft,
-            onDraftChange = {
-                draft = it
-                interactionMessage = null
-            },
-            interactionMessage = interactionMessage,
-            onSend = {
-                if (draft.isBlank()) interactionMessage = "请先输入想和小智说的话"
-                else {
-                    chatNotice = chatSendNotice(
-                        draft,
-                        device.connection == DeviceConnectionState.Online,
-                        configured = false,
-                    )
-                    navigate(AiAlbumRoute.Chat)
-                }
-            },
-            onGenerate = {
-                if (draft.isBlank()) interactionMessage = "请先描述想生成的画面"
-                else navigate(AiAlbumRoute.Chat)
-            },
             onOpenChat = { navigate(AiAlbumRoute.Chat) },
             onOpenConfig = { openConfig(AiAlbumRoute.Home) },
-            onOpenNetworkSettings = onOpenNetworkSettings,
             onNavigate = navigate,
             listState = homeListState,
             modifier = modifier,
@@ -377,14 +356,8 @@ private fun AiAlbumHomeScreen(
     modeSwitchState: ModeSwitchUiState,
     onSwitchMode: (DeviceFeature) -> Unit,
     contentPadding: PaddingValues,
-    draft: String,
-    onDraftChange: (String) -> Unit,
-    interactionMessage: String?,
-    onSend: () -> Unit,
-    onGenerate: () -> Unit,
     onOpenChat: () -> Unit,
     onOpenConfig: () -> Unit,
-    onOpenNetworkSettings: () -> Unit,
     onNavigate: (AiAlbumRoute) -> Unit,
     listState: LazyListState,
     modifier: Modifier = Modifier,
@@ -403,14 +376,7 @@ private fun AiAlbumHomeScreen(
             item { AiCurrentDisplayCard(device) }
             item {
                 XiaozhiInputCard(
-                    draft = draft,
-                    onDraftChange = onDraftChange,
-                    interactionMessage = interactionMessage,
-                    onSend = onSend,
-                    onGenerate = onGenerate,
                     onOpenChat = onOpenChat,
-                    onOpenConfig = onOpenConfig,
-                    onOpenNetworkSettings = onOpenNetworkSettings,
                     activeAiMode = device.activeFeature == DeviceFeature.AiAlbum,
                     deviceOnline = device.connection == DeviceConnectionState.Online,
                 )
@@ -518,43 +484,29 @@ private fun AiCurrentDisplayCard(device: DeviceSnapshot) {
 
 @Composable
 private fun XiaozhiInputCard(
-    draft: String,
-    onDraftChange: (String) -> Unit,
-    interactionMessage: String?,
-    onSend: () -> Unit,
-    onGenerate: () -> Unit,
     onOpenChat: () -> Unit,
-    onOpenConfig: () -> Unit,
-    onOpenNetworkSettings: () -> Unit,
     activeAiMode: Boolean,
     deviceOnline: Boolean,
 ) {
-    val actionsEnabled = draft.isNotBlank() && deviceOnline
     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary)
-                Text("小智", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
-                TextButton(onClick = onOpenChat, modifier = Modifier.heightIn(min = 48.dp)) { Text("进入对话") }
+                Box(
+                    Modifier
+                        .size(48.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center,
+                ) { Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary) }
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("小智", style = MaterialTheme.typography.titleLarge)
+                    Text("日常聊天与图片创作", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
-            OutlinedTextField(
-                value = draft,
-                onValueChange = { onDraftChange(it.take(500)) },
-                modifier = Modifier.fillMaxWidth().heightIn(min = 112.dp),
-                label = { Text("想和小智聊点什么？") },
-                placeholder = { Text("输入文字…") },
-                minLines = 2,
-                maxLines = 5,
-                trailingIcon = {
-                    IconButton(onClick = onSend, enabled = actionsEnabled, modifier = Modifier.size(48.dp)) {
-                        Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = "发送文字")
-                    }
-                },
-            )
-            Button(onClick = onGenerate, enabled = actionsEnabled, modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) {
-                Icon(Icons.Outlined.AutoAwesome, null)
+            Button(onClick = onOpenChat, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Icon(Icons.AutoMirrored.Outlined.Send, null)
                 Spacer(Modifier.size(8.dp))
-                Text("生成图片")
+                Text("进入对话")
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Outlined.Mic, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
@@ -567,19 +519,6 @@ private fun XiaozhiInputCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-            }
-            interactionMessage?.let { message ->
-                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(message, style = MaterialTheme.typography.bodyMedium)
-                        TextButton(onClick = onOpenConfig, modifier = Modifier.heightIn(min = 48.dp)) { Text("前往模型配置") }
-                    }
-                }
-            }
-            if (!deviceOnline) {
-                TextButton(onClick = onOpenNetworkSettings, modifier = Modifier.heightIn(min = 48.dp)) {
-                    Text("前往网络配置")
-                }
             }
         }
     }
