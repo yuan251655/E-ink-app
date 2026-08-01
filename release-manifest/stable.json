@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "0.1.7",
-  "version_code": 8,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.7.apk",
-  "sha256": "4217c6ed3d84e0dc0c889da0acdd96b77501827c5d443112395818e083bbb637",
+  "version_name": "0.1.8",
+  "version_code": 9,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.8.apk",
+  "sha256": "002ce519e5bd81a66f308cc5a51322a944d13bc7c6cebb7bbb177aeb47b178b2",
   "size_bytes": 11296954,
-  "release_notes": "修复 STA 下图库预览排队超时：优先使用已保存的局域网地址，并对短暂设备忙碌自动重试。",
+  "release_notes": "华为预览兼容：BIN 解码后直接显示内存图像并保存私有 PNG；重启后直接读取本地 PNG，损坏缓存自动重新同步。",
   "force_update": false,
   "min_supported_version_code": 1
 }

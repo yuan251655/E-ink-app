@@ -333,7 +333,14 @@ class LanLocalAlbumReadRepository(
             try {
                 // Yield to direct user actions (especially a display request) before optional I/O.
                 delay(500L)
-                val previewUri = previewCache.load(item.category, mediaId, item.revision, item.displayProfile)
+                var previewUri: String? = null
+                for (attempt in 0..2) {
+                    previewUri = previewCache.load(item.category, mediaId, item.revision, item.displayProfile)
+                    if (previewUri != null || attempt == 2) break
+                    // A freshly committed TF item can briefly contend with the device index/SD
+                    // reader. Retry locally rather than leaving a permanent visual placeholder.
+                    delay((attempt + 1) * 1_000L)
+                }
                 if (previewUri == null) {
                     Log.w(PREVIEW_LOG_TAG, "Preview cache unavailable for $mediaId revision=${item.revision}")
                     return@launch

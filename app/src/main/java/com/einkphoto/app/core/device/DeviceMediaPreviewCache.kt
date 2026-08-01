@@ -2,6 +2,7 @@ package com.einkphoto.app.core.device
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.util.Log
 import java.io.File
@@ -21,7 +22,7 @@ class DeviceMediaPreviewCache(
     private val mutex = Mutex()
 
     fun cachedUri(category: DeviceMediaCategory, mediaId: String, revision: Long): String? = target(category, mediaId, revision)
-        .takeIf { it.isFile && it.length() > 0L }
+        .takeIf(::isReadablePng)
         ?.let(Uri::fromFile)
         ?.toString()
 
@@ -49,6 +50,7 @@ class DeviceMediaPreviewCache(
         val destination = target(category, mediaId, revision)
         val temporary = File(directory, "${destination.name}.tmp")
         var bitmap: Bitmap? = null
+        var handedToMemoryStore = false
         try {
             bitmap = Bitmap.createBitmap(profile.widthPx, profile.heightPx, Bitmap.Config.ARGB_8888)
             val pixels = IntArray(profile.widthPx * profile.heightPx)
@@ -63,6 +65,8 @@ class DeviceMediaPreviewCache(
             destination.delete()
             check(temporary.renameTo(destination))
             val uri = Uri.fromFile(destination).toString()
+            DevicePreviewBitmapStore.put(uri, bitmap)
+            handedToMemoryStore = true
             deleteStalePreviewRevisions(category.name, mediaId, revision)
             uri
         } catch (error: CancellationException) {
@@ -71,13 +75,26 @@ class DeviceMediaPreviewCache(
             Log.w(LOG_TAG, "Device preview cache write failed for $mediaId", error)
             null
         } finally {
-            bitmap?.recycle()
+            if (!handedToMemoryStore) bitmap?.recycle()
             temporary.delete()
         }
     }
 
     private fun target(category: DeviceMediaCategory, mediaId: String, revision: Long): File =
         File(directory, previewCacheFileName(category.name, mediaId, revision))
+
+    /** Do not let a truncated old PNG suppress the required BIN re-download. */
+    private fun isReadablePng(file: File): Boolean {
+        if (!file.isFile || file.length() <= 0L) return false
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        val valid = bounds.outWidth > 0 && bounds.outHeight > 0
+        if (!valid) {
+            Log.w(LOG_TAG, "Discarding unreadable persisted media preview")
+            file.delete()
+        }
+        return valid
+    }
 
     private fun deleteStalePreviewRevisions(category: String, mediaId: String, revision: Long) {
         directory.listFiles()?.forEach { file ->

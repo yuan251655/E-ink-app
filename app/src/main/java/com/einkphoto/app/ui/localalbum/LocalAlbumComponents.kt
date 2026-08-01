@@ -57,6 +57,7 @@ import androidx.compose.ui.unit.dp
 import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.core.device.DisplayProfile
 import com.einkphoto.app.core.device.DeviceFeature
+import com.einkphoto.app.core.device.DevicePreviewBitmapStore
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.feature.localalbum.model.MediaItem
 import com.einkphoto.app.feature.localalbum.model.MediaProtectionReason
@@ -70,7 +71,6 @@ import com.einkphoto.app.ui.components.pressFeedbackClickable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.InputStream
 import kotlin.math.roundToInt
 
 private const val PREVIEW_LOG_TAG = "EinkMediaPreview"
@@ -176,15 +176,55 @@ private fun rememberPhonePreviewBitmap(source: PhoneSource): Bitmap? {
     return bitmap
 }
 
-/** Opens previews from either MediaStore/content providers or the App's private file cache. */
-private fun Context.openPreviewStream(uri: Uri): InputStream? = when (uri.scheme?.lowercase()) {
-    ContentResolver.SCHEME_FILE -> uri.path?.let { path -> File(path).inputStream() }
-    else -> contentResolver.openInputStream(uri)
+/**
+ * Decodes device-owned PNG previews directly from their private absolute file path.
+ *
+ * Huawei devices can fail to resolve an App-private `file://` URI through
+ * ContentResolver even though the PNG was successfully written. Device previews are
+ * always local PNG cache files, so keep this branch completely independent from URI
+ * providers. Phone Photo Picker / MediaStore content remains on the content stream path.
+ */
+private fun Context.decodePreview(uri: Uri, maxDimension: Int = 960): Bitmap? = runCatching {
+    if (uri.scheme.equals(ContentResolver.SCHEME_FILE, ignoreCase = true)) {
+        val absolutePath = uri.path ?: return null
+        return decodeLocalPreviewFile(absolutePath, maxDimension)
+    }
+    decodeContentPreview(uri, maxDimension)
+}.onFailure { error ->
+    // Do not log file paths, media names, or the exception message: they may contain user data.
+    Log.w(
+        PREVIEW_LOG_TAG,
+        "Unable to decode cached media preview (scheme=${uri.scheme ?: "unknown"}, error=${error.javaClass.simpleName})",
+    )
+}.getOrNull()
+
+/** Uses BitmapFactory.decodeFile for the App-private PNG cache, without ContentResolver. */
+private fun decodeLocalPreviewFile(absolutePath: String, maxDimension: Int): Bitmap? {
+    val previewFile = File(absolutePath)
+    if (!previewFile.isFile) {
+        Log.w(PREVIEW_LOG_TAG, "Local media preview file is unavailable")
+        return null
+    }
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(previewFile.absolutePath, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Log.w(PREVIEW_LOG_TAG, "Local media preview bitmap bounds are unavailable")
+        return null
+    }
+    var sampleSize = 1
+    while (bounds.outWidth / sampleSize > maxDimension || bounds.outHeight / sampleSize > maxDimension) {
+        sampleSize *= 2
+    }
+    return BitmapFactory.decodeFile(
+        previewFile.absolutePath,
+        BitmapFactory.Options().apply { inSampleSize = sampleSize },
+    )
 }
 
-private fun Context.decodePreview(uri: Uri, maxDimension: Int = 960): Bitmap? = runCatching {
+/** Keeps Android Photo Picker and MediaStore previews on their provider-backed stream path. */
+private fun Context.decodeContentPreview(uri: Uri, maxDimension: Int): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    openPreviewStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
     if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
         Log.w(PREVIEW_LOG_TAG, "Preview bitmap bounds are unavailable (scheme=${uri.scheme ?: "unknown"})")
         return null
@@ -194,19 +234,13 @@ private fun Context.decodePreview(uri: Uri, maxDimension: Int = 960): Bitmap? = 
         sampleSize *= 2
     }
     val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    val decoded = openPreviewStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
+    val decoded = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
         ?: return null
-    val orientation = openPreviewStream(uri)?.use { stream ->
+    val orientation = contentResolver.openInputStream(uri)?.use { stream ->
         ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
     } ?: ExifInterface.ORIENTATION_NORMAL
-    decoded.applyExifOrientation(orientation)
-}.onFailure { error ->
-    // Do not log file paths, media names, or the exception message: they may contain user data.
-    Log.w(
-        PREVIEW_LOG_TAG,
-        "Unable to decode cached media preview (scheme=${uri.scheme ?: "unknown"}, error=${error.javaClass.simpleName})",
-    )
-}.getOrNull()
+    return decoded.applyExifOrientation(orientation)
+}
 
 private fun Bitmap.applyExifOrientation(orientation: Int): Bitmap {
     val matrix = Matrix()
@@ -403,7 +437,14 @@ internal fun MediaCard(
 internal fun SavedMediaPreview(media: MediaItem, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, media.previewUri) {
-        value = media.previewUri?.let { uri -> withContext(Dispatchers.IO) { context.decodePreview(Uri.parse(uri)) } }
+        value = media.previewUri?.let { previewUri ->
+            withContext(Dispatchers.IO) {
+                val uri = Uri.parse(previewUri)
+                DevicePreviewBitmapStore.get(previewUri)
+                    ?: uri.takeIf { it.scheme.equals(ContentResolver.SCHEME_FILE, ignoreCase = true) }
+                        ?.let { context.decodePreview(it) }
+            }
+        }
     }
     if (bitmap == null) {
         DemoArtwork(
