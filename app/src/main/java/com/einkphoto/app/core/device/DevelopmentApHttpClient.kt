@@ -64,8 +64,11 @@ class DevelopmentApHttpClient {
         runCatching {
             require(mediaId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "invalid media id" }
             var lastError: Throwable? = null
-            for (endpoint in DeviceEndpointConfig.endpointCandidates) {
-                try {
+            // The ESP HTTP server can briefly reject a request just after an SD transaction.
+            // Retry once with bounded backoff; this remains serial due to deviceHttpMutex.
+            repeat(2) { attempt ->
+                for (endpoint in DeviceEndpointConfig.endpointCandidates) {
+                    try {
                     val connection = (URL(endpoint + "/api/v1/media/$mediaId/preview").openConnection() as HttpURLConnection).apply {
                         requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 15_000
                         setRequestProperty("Connection", "close")
@@ -78,7 +81,12 @@ class DevelopmentApHttpClient {
                         DeviceEndpointConfig.markEndpointReachable(endpoint)
                         return@runCatching frame
                     } finally { connection.disconnect() }
-                } catch (error: Throwable) { lastError = error }
+                    } catch (error: Throwable) {
+                        lastError = error
+                        Log.w("EInkDeviceHttp", "PREVIEW attempt=${attempt + 1} endpoint=$endpoint failed", error)
+                    }
+                }
+                if (attempt == 0) Thread.sleep(750L)
             }
             throw requireNotNull(lastError)
         }.onFailure { error -> Log.w("EInkDeviceHttp", "PREVIEW $baseUrl/api/v1/media/$mediaId/preview failed", error) }

@@ -29,15 +29,19 @@ object DeviceEndpointConfig {
             .takeIf(::isSafeBaseUrl)
             ?: defaultApBaseUrl
 
-    /** Try the last working address first, then both permanent recovery routes. */
+    /**
+     * Try the last working address first. On a normal STA session, the remembered LAN address
+     * must come before the AP recovery address: a missing AP otherwise adds a timeout to every
+     * serial gallery-preview download.
+     */
     val endpointCandidates: List<String>
         get() = buildList {
             add(apiBaseUrl)
-            add(defaultApBaseUrl)
             preferences?.getString(staPreferenceKey, null)
                 ?.trimEnd('/')
                 ?.takeIf(::isSafeBaseUrl)
                 ?.let(::add)
+            add(defaultApBaseUrl)
         }.distinct()
 
     fun saveApiBaseUrl(value: String): Boolean {
