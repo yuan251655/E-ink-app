@@ -30,7 +30,10 @@ class DeviceMediaPreviewCache(
     ): String? = mutex.withLock {
         if (!mediaId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) return@withLock null
         cachedUri(category, mediaId, revision)?.let { return@withLock it }
-        if (profile.widthPx != 800 || profile.heightPx != 480 || profile.frameBytes != 192_000) return@withLock null
+        if (profile.widthPx <= 0 || profile.heightPx <= 0 ||
+            profile.widthPx.toLong() * profile.heightPx.toLong() != 384_000L ||
+            profile.frameBytes != 192_000
+        ) return@withLock null
         val frame = client.downloadMediaPreview(mediaId).getOrElse { error ->
             if (error is CancellationException) throw error
             return@withLock null
