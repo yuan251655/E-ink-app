@@ -68,6 +68,8 @@ import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.feature.mode.ModeSwitchUiState
 import com.einkphoto.app.feature.aialbum.AiImageLoadState
 import com.einkphoto.app.feature.aialbum.AiImageUiState
+import com.einkphoto.app.feature.aialbum.AiConfigUiState
+import com.einkphoto.app.feature.aialbum.AiGenerationUiState
 import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
@@ -146,6 +148,12 @@ fun AiAlbumHost(
     onDeleteAiImage: (String) -> Unit = {},
     onSaveAiImageToPhone: (String) -> Unit = {},
     onSetAiPlaybackStart: () -> Unit = {},
+    aiConfigUiState: AiConfigUiState = AiConfigUiState(),
+    onRefreshAiConfig: () -> Unit = {},
+    onSaveAiConfig: (String, String, String, Boolean) -> Unit = { _, _, _, _ -> },
+    onDeleteAiConfig: () -> Unit = {},
+    aiGenerationUiState: AiGenerationUiState = AiGenerationUiState(),
+    onGenerateAiImage: (String) -> Unit = {},
     onConversationActiveChanged: (Boolean) -> Unit = {},
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
@@ -201,6 +209,7 @@ fun AiAlbumHost(
     LaunchedEffect(route, device.connection) {
         onConversationActiveChanged(isImmersiveAiConversation(route))
         if (route == AiAlbumRoute.Images && device.connection == DeviceConnectionState.Online) onRefreshAiImages()
+        if (route == AiAlbumRoute.ModelConfig && device.connection == DeviceConnectionState.Online) onRefreshAiConfig()
     }
     DisposableEffect(Unit) {
         onDispose { onConversationActiveChanged(false) }
@@ -251,13 +260,14 @@ fun AiAlbumHost(
             },
             listState = chatListState,
             online = device.connection == DeviceConnectionState.Online,
-            configured = false,
+            configured = aiConfigUiState.configuration.configured,
             replying = false,
             replyFailed = false,
-            notice = chatNotice,
+            notice = aiGenerationUiState.message ?: chatNotice,
             onNotice = { chatNotice = it },
             onBack = back,
             onOpenConfig = { openConfig(AiAlbumRoute.Chat) },
+            onGenerateConfirmed = onGenerateAiImage,
             contentPadding = contentPadding,
             modifier = modifier,
         )
@@ -300,10 +310,24 @@ fun AiAlbumHost(
     } else if (route == AiAlbumRoute.ModelConfig) {
         stateHolder.SaveableStateProvider(AiAlbumRoute.ModelConfig.name) {
             AiModelConfigScreen(
-                snapshot = AiConfigSnapshot.unconfigured(),
+                snapshot = AiConfigSnapshot(
+                    configured = aiConfigUiState.configuration.configured,
+                    enabled = aiConfigUiState.configuration.configured,
+                    mode = AiServiceMode.Direct,
+                    provider = "火山方舟",
+                    serviceUrl = aiConfigUiState.configuration.endpoint,
+                    chatModel = "小智对话将在后续接入",
+                    imageModel = aiConfigUiState.configuration.imageModel,
+                    apiKeySuffix = aiConfigUiState.configuration.keyLast4,
+                    lastVerifiedLabel = null,
+                ),
                 onBack = back,
                 newApiKey = pendingApiKey,
                 onNewApiKeyChange = { pendingApiKey = it },
+                onSave = onSaveAiConfig,
+                onDelete = onDeleteAiConfig,
+                operationMessage = aiConfigUiState.message,
+                saving = aiConfigUiState.saving,
                 tutorialCurrentStep = tutorialCurrentStep,
                 tutorialCompletedSteps = tutorialCompletedSteps.size,
                 onOpenTutorial = { routeName = AiAlbumRoute.ModelTutorial.name },

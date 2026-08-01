@@ -122,6 +122,7 @@ internal fun XiaozhiChatScreen(
     onNotice: (String?) -> Unit,
     onBack: () -> Unit,
     onOpenConfig: () -> Unit,
+    onGenerateConfirmed: (String) -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -209,6 +210,7 @@ internal fun XiaozhiChatScreen(
                 },
                 onConfirm = {
                     generationPrompt = null
+                    onGenerateConfirmed(prompt)
                     onNotice("图片生成服务尚未接入，本次没有创建任务，也不会产生费用")
                 },
             )
@@ -583,6 +585,7 @@ private fun XiaozhiChatPreview() = EInkPhotoTheme(darkTheme = false) {
         onNotice = {},
         onBack = {},
         onOpenConfig = {},
+        onGenerateConfirmed = {},
         contentPadding = PaddingValues(),
     )
 }
@@ -603,6 +606,7 @@ private fun XiaozhiChatOfflinePreview() = EInkPhotoTheme(darkTheme = true) {
         onNotice = {},
         onBack = {},
         onOpenConfig = {},
+        onGenerateConfirmed = {},
         contentPadding = PaddingValues(),
     )
 }

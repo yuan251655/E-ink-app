@@ -3,8 +3,22 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+import java.util.Properties
+
+val releaseKeystoreProperties = Properties()
+val releaseKeystorePropertiesFile = rootProject.file("keystore.properties")
+val hasReleaseSigning = releaseKeystorePropertiesFile.isFile.also { exists ->
+    if (exists) {
+        releaseKeystorePropertiesFile.inputStream().use(releaseKeystoreProperties::load)
+    }
+}
+
 val debugDeviceApiBaseUrl = providers.gradleProperty("eink.debugDeviceApiBaseUrl")
     .getOrElse("http://192.168.4.1")
+    .replace("\\", "\\\\")
+    .replace("\"", "\\\"")
+val appUpdateManifestUrl = providers.gradleProperty("eink.appUpdateManifestUrl")
+    .getOrElse("http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-manifest/stable.json")
     .replace("\\", "\\\\")
     .replace("\"", "\\\"")
 
@@ -22,11 +36,23 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        buildConfigField("String", "APP_UPDATE_MANIFEST_URL", "\"$appUpdateManifestUrl\"")
     }
 
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("einkPhotoRelease") {
+                storeFile = rootProject.file(requireNotNull(releaseKeystoreProperties.getProperty("storeFile")))
+                storePassword = requireNotNull(releaseKeystoreProperties.getProperty("storePassword"))
+                keyAlias = requireNotNull(releaseKeystoreProperties.getProperty("keyAlias"))
+                keyPassword = requireNotNull(releaseKeystoreProperties.getProperty("keyPassword"))
+            }
+        }
     }
 
     buildTypes {
@@ -37,6 +63,9 @@ android {
         release {
             // Never inherit a developer bridge endpoint into a distributable build.
             buildConfigField("String", "DEVICE_API_BASE_URL", "\"http://192.168.4.1\"")
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("einkPhotoRelease")
+            }
         }
     }
 

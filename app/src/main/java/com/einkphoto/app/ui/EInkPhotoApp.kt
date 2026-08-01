@@ -43,6 +43,9 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.einkphoto.app.feature.mode.ModeSwitchViewModel
 import com.einkphoto.app.feature.aialbum.AiImageViewModel
 import com.einkphoto.app.feature.aialbum.LanAiImageRepository
+import com.einkphoto.app.feature.aialbum.AiConfigRepository
+import com.einkphoto.app.feature.aialbum.AiConfigViewModel
+import com.einkphoto.app.feature.aialbum.AiGenerationViewModel
 import kotlinx.coroutines.delay
 
 @Composable
@@ -82,11 +85,32 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         },
     )
     val aiImageState by aiImageViewModel.state.collectAsState()
+    val aiConfigViewModel: AiConfigViewModel = viewModel(
+        key = "ai-provider-config",
+        factory = remember {
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = AiConfigViewModel(AiConfigRepository()) as T
+            }
+        },
+    )
+    val aiConfigState by aiConfigViewModel.state.collectAsState()
+    val aiGenerationViewModel: AiGenerationViewModel = viewModel(
+        key = "ai-image-generation",
+        factory = remember(aiImageViewModel) {
+            object : ViewModelProvider.Factory {
+                @Suppress("UNCHECKED_CAST")
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = AiGenerationViewModel(onCompleted = aiImageViewModel::refresh) as T
+            }
+        },
+    )
+    val aiGenerationState by aiGenerationViewModel.state.collectAsState()
     val networkRepository = remember { LanNetworkRepository() }
     val storageRepository = remember { LanStorageRepository() }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
     var showDeviceDiagnostics by rememberSaveable { mutableStateOf(false) }
+    var showAppUpdate by rememberSaveable { mutableStateOf(false) }
     var aiConversationActive by rememberSaveable { mutableStateOf(false) }
     // The badge is device state, not an optimistic network label.  Keep it
     // current while this composition is alive so powering off the frame (or
@@ -176,6 +200,15 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onDeleteAiImage = aiImageViewModel::delete,
                 onSaveAiImageToPhone = aiImageViewModel::saveToPhone,
                 onSetAiPlaybackStart = aiImageViewModel::playbackStartUnavailable,
+                aiConfigUiState = aiConfigState,
+                onRefreshAiConfig = aiConfigViewModel::refresh,
+                onSaveAiConfig = { endpoint, model, key, testRequested ->
+                    if (testRequested) aiConfigViewModel.saveAndTest(endpoint, model, key)
+                    else aiConfigViewModel.save(endpoint, model, key)
+                },
+                onDeleteAiConfig = aiConfigViewModel::clear,
+                aiGenerationUiState = aiGenerationState,
+                onGenerateAiImage = aiGenerationViewModel::generate,
                 onConversationActiveChanged = { aiConversationActive = it },
                 contentPadding = padding,
             )
@@ -189,6 +222,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 storageRepository = storageRepository,
                 showDeviceDiagnostics = showDeviceDiagnostics,
                 onOpenDeviceDiagnostics = { showDeviceDiagnostics = true },
+                showAppUpdate = showAppUpdate,
+                onOpenAppUpdate = { showAppUpdate = true },
+                onCloseAppUpdate = { showAppUpdate = false },
                 deviceSnapshot = snapshot,
             )
             else -> FeaturePlaceholderScreen(

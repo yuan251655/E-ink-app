@@ -63,12 +63,16 @@ fun NetworkSettingsScreen(
     storageRepository: StorageRepository,
     showDeviceDiagnostics: Boolean,
     onOpenDeviceDiagnostics: () -> Unit,
+    showAppUpdate: Boolean,
+    onOpenAppUpdate: () -> Unit,
+    onCloseAppUpdate: () -> Unit,
     deviceSnapshot: DeviceSnapshot,
 ) {
     if (showNetworkConfiguration) NetworkConfigurationPage(repository, contentPadding)
     else if (showStorageManagement) StorageManagementPage(storageRepository, contentPadding)
     else if (showDeviceDiagnostics) DeviceDiagnosticsPage(repository, storageRepository, deviceSnapshot, contentPadding)
-    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenDeviceDiagnostics)
+    else if (showAppUpdate) AppUpdateScreen(onCloseAppUpdate, contentPadding)
+    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenDeviceDiagnostics, onOpenAppUpdate)
 }
 
 @Composable
@@ -78,6 +82,7 @@ private fun SettingsHome(
     onOpenNetwork: () -> Unit,
     onOpenStorageManagement: () -> Unit,
     onOpenDeviceDiagnostics: () -> Unit,
+    onOpenAppUpdate: () -> Unit,
 ) {
     val state by repository.snapshot.collectAsState()
     LaunchedEffect(repository) { repository.refresh() }
@@ -107,6 +112,15 @@ private fun SettingsHome(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("设备诊断", style = MaterialTheme.typography.titleMedium)
                     Text("查看设备、网络、TF 卡和显示状态", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenAppUpdate)) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("应用更新", style = MaterialTheme.typography.titleMedium)
+                    Text("检查并安装最新版本的墨相框 App", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

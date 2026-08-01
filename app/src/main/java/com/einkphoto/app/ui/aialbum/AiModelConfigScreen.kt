@@ -138,6 +138,10 @@ internal fun AiModelConfigScreen(
     onBack: () -> Unit,
     newApiKey: String,
     onNewApiKeyChange: (String) -> Unit,
+    onSave: (endpoint: String, imageModel: String, apiKey: String, testRequested: Boolean) -> Unit,
+    onDelete: () -> Unit,
+    operationMessage: String?,
+    saving: Boolean,
     tutorialCurrentStep: Int,
     tutorialCompletedSteps: Int,
     onOpenTutorial: () -> Unit,
@@ -155,7 +159,7 @@ internal fun AiModelConfigScreen(
     var checks by remember { mutableStateOf<List<AiFieldCheck>>(emptyList()) }
     var actionMessage by rememberSaveable { mutableStateOf<String?>(null) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
-    val selectedMode = AiServiceMode.entries.firstOrNull { it.name == modeName } ?: AiServiceMode.Gateway
+    val selectedMode = AiServiceMode.Direct
 
     fun currentDraft() = AiConfigDraft(
         mode = selectedMode,
@@ -168,12 +172,11 @@ internal fun AiModelConfigScreen(
 
     fun validateAndExplain(testRequested: Boolean) {
         checks = validateAiConfigDraft(currentDraft(), snapshot.configured && snapshot.apiKeySuffix != null)
-        actionMessage = if (checks.any { it.state == AiFieldState.Invalid }) {
-            "请先补充或修正标记的配置项。"
-        } else if (testRequested) {
-            "服务尚未接入：配置没有保存，也没有执行服务测试，本次不会产生费用。"
+        if (checks.any { it.state == AiFieldState.Invalid }) {
+            actionMessage = "请先补充或修正标记的配置项。"
         } else {
-            "服务尚未接入：配置没有保存。"
+            actionMessage = null
+            onSave(serviceUrl.trim(), imageModel.trim(), newApiKey, testRequested)
         }
     }
 
@@ -188,16 +191,12 @@ internal fun AiModelConfigScreen(
                 item { ServiceStatusCard(snapshot) }
                 item {
                     SectionTitle("服务模式")
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        AiServiceMode.entries.forEach { mode ->
-                            FilterChip(
-                                selected = selectedMode == mode,
-                                onClick = { modeName = mode.name; actionMessage = null },
-                                label = { Text(mode.label) },
-                                modifier = Modifier.heightIn(min = 48.dp),
-                            )
-                        }
-                    }
+                    FilterChip(
+                        selected = true,
+                        onClick = {},
+                        label = { Text(AiServiceMode.Direct.label) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    )
                     Text(
                         if (selectedMode == AiServiceMode.Gateway) "推荐：长期密钥由安全 Gateway 保管。" else "原型直连：新的 Key 只允许写入，不会从相框取回。",
                         style = MaterialTheme.typography.bodyMedium,
@@ -291,28 +290,28 @@ internal fun AiModelConfigScreen(
                 }
                 if (checks.isNotEmpty()) item { ValidationResults(checks) }
                 item {
-                    actionMessage?.let {
+                    (operationMessage ?: actionMessage)?.let {
                         OutlinedCard(modifier = Modifier.fillMaxWidth()) {
                             Text(it, modifier = Modifier.padding(14.dp), style = MaterialTheme.typography.bodyMedium)
                         }
                         Spacer(Modifier.size(10.dp))
                     }
-                    Button(onClick = { validateAndExplain(testRequested = true) }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Button(onClick = { validateAndExplain(testRequested = true) }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Icon(Icons.Outlined.CheckCircle, null)
                         Spacer(Modifier.size(8.dp))
-                        Text("保存并测试")
+                        Text(if (saving) "正在保存…" else "保存并测试")
                     }
-                    OutlinedButton(onClick = { validateAndExplain(testRequested = false) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                    OutlinedButton(onClick = { validateAndExplain(testRequested = false) }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Icon(Icons.Outlined.Save, null)
                         Spacer(Modifier.size(8.dp))
-                        Text("仅保存")
+                        Text("保存配置")
                     }
                 }
                 item {
                     HorizontalDivider()
                     TextButton(
                         onClick = { showDeleteConfirmation = true },
-                        enabled = snapshot.configured,
+                        enabled = snapshot.configured && !saving,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     ) {
                         Icon(Icons.Outlined.DeleteOutline, null)
@@ -340,7 +339,7 @@ internal fun AiModelConfigScreen(
                 TextButton(
                     onClick = {
                         showDeleteConfirmation = false
-                        actionMessage = "服务尚未接入，当前配置没有删除。"
+                        onDelete()
                     },
                     modifier = Modifier.heightIn(min = 48.dp),
                 ) { Text("确认删除", color = MaterialTheme.colorScheme.error) }
@@ -484,7 +483,11 @@ private fun ValidationLine(check: AiFieldCheck) {
 @Preview(name = "AI 配置 · 未配置小屏", showBackground = true, widthDp = 320, heightDp = 720)
 @Composable
 private fun AiModelConfigEmptyPreview() = EInkPhotoTheme(darkTheme = false) {
-    AiModelConfigScreen(AiConfigSnapshot.unconfigured(), {}, "", {}, 0, 0, {}, PaddingValues())
+    AiModelConfigScreen(
+        snapshot = AiConfigSnapshot.unconfigured(), onBack = {}, newApiKey = "", onNewApiKeyChange = {},
+        onSave = { _, _, _, _ -> }, onDelete = {}, operationMessage = null, saving = false,
+        tutorialCurrentStep = 0, tutorialCompletedSteps = 0, onOpenTutorial = {}, contentPadding = PaddingValues(),
+    )
 }
 
 @Preview(name = "AI 配置 · 已配置深色大字体", showBackground = true, widthDp = 393, heightDp = 852, fontScale = 1.5f)
@@ -505,6 +508,10 @@ private fun AiModelConfigConfiguredPreview() = EInkPhotoTheme(darkTheme = true) 
         onBack = {},
         newApiKey = "",
         onNewApiKeyChange = {},
+        onSave = { _, _, _, _ -> },
+        onDelete = {},
+        operationMessage = null,
+        saving = false,
         tutorialCurrentStep = 3,
         tutorialCompletedSteps = 3,
         onOpenTutorial = {},
@@ -515,5 +522,9 @@ private fun AiModelConfigConfiguredPreview() = EInkPhotoTheme(darkTheme = true) 
 @Preview(name = "AI 配置 · 横屏", showBackground = true, widthDp = 720, heightDp = 360)
 @Composable
 private fun AiModelConfigLandscapePreview() = EInkPhotoTheme(darkTheme = false) {
-    AiModelConfigScreen(AiConfigSnapshot.unconfigured(), {}, "", {}, 1, 1, {}, PaddingValues())
+    AiModelConfigScreen(
+        snapshot = AiConfigSnapshot.unconfigured(), onBack = {}, newApiKey = "", onNewApiKeyChange = {},
+        onSave = { _, _, _, _ -> }, onDelete = {}, operationMessage = null, saving = false,
+        tutorialCurrentStep = 1, tutorialCompletedSteps = 1, onOpenTutorial = {}, contentPadding = PaddingValues(),
+    )
 }

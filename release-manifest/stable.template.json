@@ -1,0 +1,12 @@
+{
+  "channel": "stable",
+  "package_name": "com.einkphoto.app",
+  "version_name": "0.1.0",
+  "version_code": 1,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/app-v0.1.0/eink-photo-v0.1.0.apk",
+  "sha256": "REPLACE_WITH_RELEASE_APK_SHA256",
+  "size_bytes": 0,
+  "release_notes": "首个正式发布版本。",
+  "force_update": false,
+  "min_supported_version_code": 1
+}
