@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "0.1.4",
-  "version_code": 5,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.4.apk",
-  "sha256": "26cae8ec1da0dcc1f89946f1f369c08c73e307e29b0d282ad0aaf68863196984",
+  "version_name": "0.1.5",
+  "version_code": 6,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.5.apk",
+  "sha256": "9a616fb738cf6ee1536d59c7ba83ba5aa7dfb7f14d043bb8d9448c6558e36168",
   "size_bytes": 11296954,
-  "release_notes": "修复真实相框图库预览：兼容横屏与竖屏 BIN 媒体，最近图片、当前图片和管理图片均可生成可视化预览。",
+  "release_notes": "修复真实相框图库预览下载：预览 BIN 也会在 AP 与 STA 地址之间自动回退。",
   "force_update": false,
   "min_supported_version_code": 1
 }

@@ -63,21 +63,24 @@ class DevelopmentApHttpClient {
     suspend fun downloadMediaPreview(mediaId: String): Result<ByteArray> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             require(mediaId.matches(Regex("[A-Za-z0-9_-]{1,64}"))) { "invalid media id" }
-            val connection = (URL(baseUrl + "/api/v1/media/$mediaId/preview").openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 15_000
-                setRequestProperty("Connection", "close")
+            var lastError: Throwable? = null
+            for (endpoint in DeviceEndpointConfig.endpointCandidates) {
+                try {
+                    val connection = (URL(endpoint + "/api/v1/media/$mediaId/preview").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 15_000
+                        setRequestProperty("Connection", "close")
+                    }
+                    try {
+                        require(connection.responseCode == HttpURLConnection.HTTP_OK) { "preview unavailable" }
+                        val declared = connection.contentLengthLong
+                        require(declared < 0L || declared == 192_000L) { "invalid preview size" }
+                        val frame = connection.inputStream.use { input -> input.readNBytes(192_001).also { require(it.size == 192_000) { "invalid preview frame" } } }
+                        DeviceEndpointConfig.markEndpointReachable(endpoint)
+                        return@runCatching frame
+                    } finally { connection.disconnect() }
+                } catch (error: Throwable) { lastError = error }
             }
-            try {
-                require(connection.responseCode == HttpURLConnection.HTTP_OK) { "preview unavailable" }
-                val declared = connection.contentLengthLong
-                // ESP-IDF sends this fixed-size resource with chunked HTTP.
-                require(declared < 0L || declared == 192_000L) { "invalid preview size" }
-                connection.inputStream.use { input ->
-                    input.readNBytes(192_001).also { require(it.size == 192_000) { "invalid preview frame" } }
-                }
-            } finally {
-                connection.disconnect()
-            }
+            throw requireNotNull(lastError)
         }.onFailure { error -> Log.w("EInkDeviceHttp", "PREVIEW $baseUrl/api/v1/media/$mediaId/preview failed", error) }
     } }
 
