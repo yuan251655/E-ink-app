@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "0.1.5",
-  "version_code": 6,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.5.apk",
-  "sha256": "9a616fb738cf6ee1536d59c7ba83ba5aa7dfb7f14d043bb8d9448c6558e36168",
-  "size_bytes": 11296954,
-  "release_notes": "修复真实相框图库预览下载：预览 BIN 也会在 AP 与 STA 地址之间自动回退。",
+  "version_name": "0.1.6",
+  "version_code": 7,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/raw/branch/main/release-apks/eink-photo-v0.1.6.apk",
+  "sha256": "6c0048353cc1a48b3b45b399efbaa32a1a22b7a8ba9c485af5e47a56267b2516",
+  "size_bytes": 11296950,
+  "release_notes": "修复真机图库预览：BIN 解码后的图片保存到 App 私有持久目录，并直接读取本地文件显示。",
   "force_update": false,
   "min_supported_version_code": 1
 }

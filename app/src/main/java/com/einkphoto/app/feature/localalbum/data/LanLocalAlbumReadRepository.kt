@@ -1,6 +1,7 @@
 package com.einkphoto.app.feature.localalbum.data
 
 import android.content.Context
+import android.util.Log
 import com.einkphoto.app.core.device.DevelopmentApHttpClient
 import com.einkphoto.app.core.device.DeviceCommandResult
 import com.einkphoto.app.core.device.DeviceFeature
@@ -332,7 +333,11 @@ class LanLocalAlbumReadRepository(
             try {
                 // Yield to direct user actions (especially a display request) before optional I/O.
                 delay(500L)
-                val previewUri = previewCache.load(item.category, mediaId, item.revision, item.displayProfile) ?: return@launch
+                val previewUri = previewCache.load(item.category, mediaId, item.revision, item.displayProfile)
+                if (previewUri == null) {
+                    Log.w(PREVIEW_LOG_TAG, "Preview cache unavailable for $mediaId revision=${item.revision}")
+                    return@launch
+                }
                 mutableMedia.value = mutableMedia.value.map { media ->
                     if (media.id.value == mediaId && media.revision == item.revision) media.copy(previewUri = previewUri) else media
                 }
@@ -364,6 +369,7 @@ class LanLocalAlbumReadRepository(
     )
 
     private companion object {
+        const val PREVIEW_LOG_TAG = "EInkLocalAlbum"
         val terminalJobStates = setOf(DeviceJobState.Success, DeviceJobState.Failed, DeviceJobState.Cancelled, DeviceJobState.TimedOut)
     }
 }

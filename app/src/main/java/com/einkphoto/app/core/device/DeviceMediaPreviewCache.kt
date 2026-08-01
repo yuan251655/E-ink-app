@@ -3,18 +3,21 @@ package com.einkphoto.app.core.device
 import android.content.Context
 import android.graphics.Bitmap
 import android.net.Uri
+import android.util.Log
 import java.io.File
 import java.io.FileOutputStream
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-/** Decodes one device-owned packed 4bpp frame into an App-private PNG preview cache. */
+/** Decodes one device-owned packed 4bpp frame into an App-private persisted PNG preview store. */
 class DeviceMediaPreviewCache(
     context: Context,
     private val client: DevelopmentApHttpClient = DevelopmentApHttpClient(),
 ) {
-    private val directory = File(context.applicationContext.cacheDir, "device-media-preview").apply { mkdirs() }
+    // These are user-visible gallery previews. Keep them in private files storage rather than
+    // cacheDir so normal system cache cleanup does not force another BIN download/decode.
+    private val directory = File(context.applicationContext.filesDir, "device-media-preview").apply { mkdirs() }
     private val mutex = Mutex()
 
     fun cachedUri(category: DeviceMediaCategory, mediaId: String, revision: Long): String? = target(category, mediaId, revision)
@@ -36,9 +39,13 @@ class DeviceMediaPreviewCache(
         ) return@withLock null
         val frame = client.downloadMediaPreview(mediaId).getOrElse { error ->
             if (error is CancellationException) throw error
+            Log.w(LOG_TAG, "Device preview download failed for $mediaId", error)
             return@withLock null
         }
-        if (frame.size != profile.frameBytes) return@withLock null
+        if (frame.size != profile.frameBytes) {
+            Log.w(LOG_TAG, "Device preview size mismatch for $mediaId: ${frame.size}")
+            return@withLock null
+        }
         val destination = target(category, mediaId, revision)
         val temporary = File(directory, "${destination.name}.tmp")
         var bitmap: Bitmap? = null
@@ -60,7 +67,8 @@ class DeviceMediaPreviewCache(
             uri
         } catch (error: CancellationException) {
             throw error
-        } catch (_: Throwable) {
+        } catch (error: Throwable) {
+            Log.w(LOG_TAG, "Device preview cache write failed for $mediaId", error)
             null
         } finally {
             bitmap?.recycle()
@@ -87,6 +95,10 @@ class DeviceMediaPreviewCache(
         5 -> 0xff245bc6.toInt()
         6 -> 0xff1c9b54.toInt()
         else -> 0xffffffff.toInt()
+    }
+
+    private companion object {
+        const val LOG_TAG = "EInkPreviewCache"
     }
 }
 

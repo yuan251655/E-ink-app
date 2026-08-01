@@ -1,10 +1,12 @@
 package com.einkphoto.app.ui.localalbum
 
 import android.content.Context
+import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Matrix
 import android.net.Uri
+import android.util.Log
 import androidx.exifinterface.media.ExifInterface
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -67,7 +69,11 @@ import com.einkphoto.app.ui.theme.appSemanticColors
 import com.einkphoto.app.ui.components.pressFeedbackClickable
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.io.InputStream
 import kotlin.math.roundToInt
+
+private const val PREVIEW_LOG_TAG = "EinkMediaPreview"
 
 internal enum class ArtworkPresentation {
     DeviceCanvas,
@@ -170,21 +176,36 @@ private fun rememberPhonePreviewBitmap(source: PhoneSource): Bitmap? {
     return bitmap
 }
 
+/** Opens previews from either MediaStore/content providers or the App's private file cache. */
+private fun Context.openPreviewStream(uri: Uri): InputStream? = when (uri.scheme?.lowercase()) {
+    ContentResolver.SCHEME_FILE -> uri.path?.let { path -> File(path).inputStream() }
+    else -> contentResolver.openInputStream(uri)
+}
+
 private fun Context.decodePreview(uri: Uri, maxDimension: Int = 960): Bitmap? = runCatching {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
-    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+    openPreviewStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+        Log.w(PREVIEW_LOG_TAG, "Preview bitmap bounds are unavailable (scheme=${uri.scheme ?: "unknown"})")
+        return null
+    }
     var sampleSize = 1
     while (bounds.outWidth / sampleSize > maxDimension || bounds.outHeight / sampleSize > maxDimension) {
         sampleSize *= 2
     }
     val decodeOptions = BitmapFactory.Options().apply { inSampleSize = sampleSize }
-    val decoded = contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
+    val decoded = openPreviewStream(uri)?.use { BitmapFactory.decodeStream(it, null, decodeOptions) }
         ?: return null
-    val orientation = contentResolver.openInputStream(uri)?.use { stream ->
+    val orientation = openPreviewStream(uri)?.use { stream ->
         ExifInterface(stream).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL)
     } ?: ExifInterface.ORIENTATION_NORMAL
     decoded.applyExifOrientation(orientation)
+}.onFailure { error ->
+    // Do not log file paths, media names, or the exception message: they may contain user data.
+    Log.w(
+        PREVIEW_LOG_TAG,
+        "Unable to decode cached media preview (scheme=${uri.scheme ?: "unknown"}, error=${error.javaClass.simpleName})",
+    )
 }.getOrNull()
 
 private fun Bitmap.applyExifOrientation(orientation: Int): Bitmap {
