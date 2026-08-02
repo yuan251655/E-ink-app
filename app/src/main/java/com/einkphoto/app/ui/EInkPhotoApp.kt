@@ -48,8 +48,6 @@ import com.einkphoto.app.feature.aialbum.LanAiImageRepository
 import com.einkphoto.app.feature.aialbum.AiConfigRepository
 import com.einkphoto.app.feature.aialbum.AiConfigViewModel
 import com.einkphoto.app.feature.aialbum.AiGenerationViewModel
-import com.einkphoto.app.feature.aialbum.XiaozhiSettingsRepository
-import com.einkphoto.app.feature.aialbum.XiaozhiSettingsViewModel
 import com.einkphoto.app.feature.mode.ModeSwitchPhase
 import com.einkphoto.app.ui.components.ModeSwitchGlobalStatus
 import kotlinx.coroutines.delay
@@ -111,29 +109,13 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         },
     )
     val aiGenerationState by aiGenerationViewModel.state.collectAsState()
-    val xiaozhiSettingsViewModel: XiaozhiSettingsViewModel = viewModel(
-        key = "xiaozhi-settings",
-        factory = remember {
-            object : ViewModelProvider.Factory {
-                @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T =
-                    XiaozhiSettingsViewModel(XiaozhiSettingsRepository()) as T
-            }
-        },
-    )
-    val xiaozhiSettingsState by xiaozhiSettingsViewModel.state.collectAsState()
     val networkRepository = remember { LanNetworkRepository() }
     val storageRepository = remember { LanStorageRepository() }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
     var showDeviceDiagnostics by rememberSaveable { mutableStateOf(false) }
     var showAppUpdate by rememberSaveable { mutableStateOf(false) }
-    var aiConversationActive by rememberSaveable { mutableStateOf(false) }
     var handledModeSwitchJob by rememberSaveable { mutableStateOf<String?>(null) }
-    // Keep the lightweight Xiaozhi service status synchronized across the AI album.
-    LaunchedEffect(selected) {
-        xiaozhiSettingsViewModel.setActive(selected == AppDestination.AiAlbum)
-    }
     // The badge is device state, not an optimistic network label.  Keep it
     // current while this composition is alive so powering off the frame (or
     // losing either AP or STA reachability) clears a stale "connected" badge.
@@ -175,7 +157,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         modifier = Modifier.fillMaxSize(),
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            if (!aiConversationActive) Column {
+            Column {
                 CenterAlignedTopAppBar(
                     title = { Text("墨水屏相册") },
                     navigationIcon = {
@@ -196,7 +178,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
             }
         },
         bottomBar = {
-            if (!aiConversationActive) NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                 AppDestination.entries.forEach { destination ->
                     NavigationBarItem(
                         selected = selected == destination,
@@ -207,7 +189,6 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                             showNetworkConfiguration = false
                             showStorageManagement = false
                             showDeviceDiagnostics = false
-                            aiConversationActive = false
                             onDestinationSelected(destination)
                         },
                         icon = { androidx.compose.material3.Icon(if (selected == destination) destination.selectedIcon else destination.icon, null) },
@@ -248,10 +229,6 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onDeleteAiConfig = aiConfigViewModel::clear,
                 aiGenerationUiState = aiGenerationState,
                 onGenerateAiImage = aiGenerationViewModel::generate,
-                xiaozhiSettingsUiState = xiaozhiSettingsState,
-                onConversationActiveChanged = {
-                    aiConversationActive = it
-                },
                 contentPadding = padding,
             )
             AppDestination.Settings -> NetworkSettingsScreen(
