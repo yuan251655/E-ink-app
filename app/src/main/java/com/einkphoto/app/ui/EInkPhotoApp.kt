@@ -48,6 +48,7 @@ import com.einkphoto.app.feature.aialbum.LanAiImageRepository
 import com.einkphoto.app.feature.aialbum.AiConfigRepository
 import com.einkphoto.app.feature.aialbum.AiConfigViewModel
 import com.einkphoto.app.feature.aialbum.AiGenerationViewModel
+import com.einkphoto.app.feature.aialbum.AiGenerationRepository
 import com.einkphoto.app.feature.mode.ModeSwitchPhase
 import com.einkphoto.app.ui.components.ModeSwitchGlobalStatus
 import kotlinx.coroutines.delay
@@ -104,7 +105,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         factory = remember(aiImageViewModel) {
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T = AiGenerationViewModel(onCompleted = aiImageViewModel::refresh) as T
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = AiGenerationViewModel(AiGenerationRepository(context.applicationContext), onCompleted = aiImageViewModel::refresh) as T
             }
         },
     )
@@ -230,6 +231,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onDeleteAiConfig = aiConfigViewModel::clear,
                 aiGenerationUiState = aiGenerationState,
                 onGenerateAiImage = aiGenerationViewModel::generate,
+                onConfirmAiSave = aiGenerationViewModel::confirmSave,
+                onContinueAiHistory = aiGenerationViewModel::continueQuery,
+                onDiscardAiHistory = aiGenerationViewModel::discardHistory,
                 contentPadding = padding,
             )
             AppDestination.Settings -> NetworkSettingsScreen(

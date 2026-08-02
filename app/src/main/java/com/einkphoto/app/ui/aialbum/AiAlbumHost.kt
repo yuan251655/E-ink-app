@@ -49,6 +49,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +61,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.core.device.DeviceContentKind
 import com.einkphoto.app.core.device.DeviceCurrentContent
@@ -154,6 +160,9 @@ fun AiAlbumHost(
     onDeleteAiConfig: () -> Unit = {},
     aiGenerationUiState: AiGenerationUiState = AiGenerationUiState(),
     onGenerateAiImage: (String) -> Unit = {},
+    onConfirmAiSave: () -> Unit = {},
+    onContinueAiHistory: (String) -> Unit = {},
+    onDiscardAiHistory: (String) -> Unit = {},
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -196,14 +205,18 @@ fun AiAlbumHost(
         routeName = aiBackDestination(route).name
     }
 
-    androidx.compose.runtime.LaunchedEffect(route, device.connection) {
-        if (route == AiAlbumRoute.Images && device.connection == DeviceConnectionState.Online) onRefreshAiImages()
+    androidx.compose.runtime.LaunchedEffect(route, device.connection, device.currentContent?.mediaId) {
+        if (
+            route in setOf(AiAlbumRoute.Home, AiAlbumRoute.Images) &&
+            device.connection == DeviceConnectionState.Online
+        ) onRefreshAiImages()
         if (route == AiAlbumRoute.ModelConfig && device.connection == DeviceConnectionState.Online) onRefreshAiConfig()
     }
     BackHandler(enabled = route != AiAlbumRoute.Home, onBack = back)
     if (route == AiAlbumRoute.Home) {
         AiAlbumHomeScreen(
             device = device,
+            aiImages = runtimeAiImages,
             modeSwitchState = modeSwitchState,
             onSwitchMode = onSwitchMode,
             contentPadding = contentPadding,
@@ -280,6 +293,18 @@ fun AiAlbumHost(
                 modifier = modifier,
             )
         }
+    } else if (route == AiAlbumRoute.Create) {
+        AiGenerationChatScreen(
+            state = aiGenerationUiState,
+            onGenerate = onGenerateAiImage,
+            onConfirmSave = onConfirmAiSave,
+            onOpenAiImages = { routeName = AiAlbumRoute.Images.name },
+            onContinueHistory = onContinueAiHistory,
+            onDiscardHistory = onDiscardAiHistory,
+            onBack = back,
+            contentPadding = contentPadding,
+            modifier = modifier,
+        )
     } else if (route == AiAlbumRoute.ModelTutorial) {
         AiModelTutorialScreen(
             currentStep = tutorialCurrentStep,
@@ -319,6 +344,7 @@ private fun formatAiImageTime(epochMillis: Long): String = if (epochMillis > 0L)
 @Composable
 private fun AiAlbumHomeScreen(
     device: DeviceSnapshot,
+    aiImages: List<AiImageRecord>,
     modeSwitchState: ModeSwitchUiState,
     onSwitchMode: (DeviceFeature) -> Unit,
     contentPadding: PaddingValues,
@@ -339,7 +365,22 @@ private fun AiAlbumHomeScreen(
                 ModeFeatureHeader("AI 相册", DeviceFeature.AiAlbum, device, modeSwitchState, onSwitchMode)
             }
             item { ModeSwitchStatusCard(DeviceFeature.AiAlbum, modeSwitchState) }
-            item { AiCurrentDisplayCard(device) }
+            item {
+                AiCurrentDisplayCard(
+                    device = device,
+                    currentAiImage = aiImages.firstOrNull { it.id == device.currentContent?.mediaId },
+                )
+            }
+            item {
+                Button(
+                    onClick = { onNavigate(AiAlbumRoute.Create) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text("创建图片")
+                }
+            }
             item {
                 XiaozhiInputCard(
                     onOpenSettings = onOpenXiaozhiSettings,
@@ -361,39 +402,15 @@ private fun AiAlbumHomeScreen(
                     }
                 }
             }
-            item {
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Text("最近生成", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                    TextButton(onClick = { onNavigate(AiAlbumRoute.Images) }, modifier = Modifier.heightIn(min = 48.dp)) { Text("查看全部") }
-                }
-                OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 24.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        Icon(Icons.Outlined.Image, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(34.dp))
-                        Text("还没有 AI 图片", style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            "完成模型配置后，可以从文字描述创建第一张图片。",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                        Button(onClick = { onNavigate(AiAlbumRoute.Create) }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Icon(Icons.Outlined.AutoAwesome, null)
-                            Spacer(Modifier.size(8.dp))
-                            Text("创建第一张")
-                        }
-                    }
-                }
-            }
         }
     }
 }
 
 @Composable
-private fun AiCurrentDisplayCard(device: DeviceSnapshot) {
+private fun AiCurrentDisplayCard(
+    device: DeviceSnapshot,
+    currentAiImage: AiImageRecord?,
+) {
     val presentation = aiCurrentDisplayPresentation(device)
     val owner = device.currentContent?.ownerFeature ?: device.activeFeature
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -413,14 +430,7 @@ private fun AiCurrentDisplayCard(device: DeviceSnapshot) {
                         modifier = Modifier.fillMaxSize(),
                         contentScale = ContentScale.Fit,
                     )
-                    AiCurrentDisplayPresentation.AiMedia -> Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        Icon(Icons.Outlined.Image, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
-                        Text("正在显示 AI 相册图片", style = MaterialTheme.typography.titleMedium)
-                        Text("图片预览暂不可用", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                    AiCurrentDisplayPresentation.AiMedia -> AiCurrentImagePreview(currentAiImage)
                     AiCurrentDisplayPresentation.OtherFeature -> Text(
                         crossFeatureDisplayText(owner),
                         style = MaterialTheme.typography.titleMedium,
@@ -436,7 +446,7 @@ private fun AiCurrentDisplayCard(device: DeviceSnapshot) {
             Text(
                 when (presentation) {
                     AiCurrentDisplayPresentation.ModeCover -> "AI 相册模式提示画面"
-                    AiCurrentDisplayPresentation.AiMedia -> "AI 相册正在显示"
+                    AiCurrentDisplayPresentation.AiMedia -> currentAiImage?.name ?: "AI 相册正在显示"
                     AiCurrentDisplayPresentation.OtherFeature -> crossFeatureDisplayText(owner)
                     AiCurrentDisplayPresentation.Unavailable -> "暂无可读取画面"
                 },
@@ -444,6 +454,36 @@ private fun AiCurrentDisplayCard(device: DeviceSnapshot) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+        }
+    }
+}
+
+@Composable
+private fun AiCurrentImagePreview(image: AiImageRecord?) {
+    val context = LocalContext.current
+    val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, image?.previewUri) {
+        value = image?.previewUri?.let { previewUri ->
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openInputStream(Uri.parse(previewUri))?.use(BitmapFactory::decodeStream)
+                }.getOrNull()
+            }
+        }
+    }
+    if (bitmap != null) {
+        Image(
+            bitmap = bitmap!!.asImageBitmap(),
+            contentDescription = "相框当前显示的 AI 图片",
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+        )
+    } else {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            Icon(Icons.Outlined.Image, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
+            Text("正在显示 AI 相册图片", style = MaterialTheme.typography.titleMedium)
         }
     }
 }
