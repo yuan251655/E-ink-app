@@ -39,21 +39,25 @@ class AiConfigRepository(
 
     suspend fun clear(): Result<Unit> = client.deleteJson("/api/v1/ai/config", JSONObject()).map { Unit }
 
-    suspend fun testConnection(): Result<AiConnectionTest> =
-        client.postJson("/api/v1/ai/config/test", JSONObject()).mapCatching { root ->
+    suspend fun testConnection(allowBillableTest: Boolean): Result<AiConnectionTest> =
+        client.postJson("/api/v1/ai/config/test", JSONObject().put("allow_billable_test", allowBillableTest)).mapCatching { root ->
             val data = root.optJSONObject("data")
             AiConnectionTest(
                 code = root.optString("code", "ai_service_unavailable"),
+                networkReachable = data?.optBoolean("network_reachable", false) == true,
                 endpointReachable = data?.optBoolean("endpoint_reachable", false) == true,
                 authenticated = data?.optBoolean("authenticated", false) == true,
                 modelAvailable = data?.optBoolean("model_available", false) == true,
+                providerMessage = data?.optString("provider_message", "").orEmpty(),
             )
         }
 }
 
 data class AiConnectionTest(
     val code: String,
+    val networkReachable: Boolean,
     val endpointReachable: Boolean,
     val authenticated: Boolean,
     val modelAvailable: Boolean,
+    val providerMessage: String = "",
 )

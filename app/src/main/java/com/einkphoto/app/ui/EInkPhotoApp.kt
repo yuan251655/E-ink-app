@@ -226,6 +226,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                     if (testRequested) aiConfigViewModel.saveAndTest(endpoint, model, key)
                     else aiConfigViewModel.save(endpoint, model, key)
                 },
+                onTestSavedAiConfig = aiConfigViewModel::testSaved,
                 onDeleteAiConfig = aiConfigViewModel::clear,
                 aiGenerationUiState = aiGenerationState,
                 onGenerateAiImage = aiGenerationViewModel::generate,

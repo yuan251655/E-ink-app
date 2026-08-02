@@ -227,11 +227,16 @@ class DevelopmentApHttpClient {
     suspend fun postJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
+            // Model validation intentionally performs one minimal cloud image
+            // request after the user confirms billing. It follows the official
+            // firmware's 180-second window; a generic 20-second HTTP timeout
+            // would make the App report a false failure first.
+            val readTimeoutMs = if (path == "/api/v1/ai/config/test") 195_000 else 20_000
             val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 5_000
-                readTimeout = 20_000
+                readTimeout = readTimeoutMs
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
                 setRequestProperty("Connection", "close")
                 setFixedLengthStreamingMode(payload.size)

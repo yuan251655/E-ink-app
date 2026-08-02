@@ -11,6 +11,7 @@ data class AiConfigUiState(
     val loading: Boolean = false,
     val saving: Boolean = false,
     val message: String? = null,
+    val testResult: AiConnectionTest? = null,
 )
 
 class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel() {
@@ -31,7 +32,7 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
             mutableState.value = mutableState.value.copy(message = "请填写 HTTPS 服务地址、生图模型和有效的 API Key")
             return@launch
         }
-        mutableState.value = mutableState.value.copy(saving = true, message = null)
+        mutableState.value = mutableState.value.copy(saving = true, message = null, testResult = null)
         repository.save(endpoint, imageModel, apiKey).onSuccess { config ->
             mutableState.value = mutableState.value.copy(
                 configuration = config,
@@ -48,28 +49,43 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
             mutableState.value = mutableState.value.copy(message = "请填写 HTTPS 服务地址、生图模型和有效的 API Key")
             return@launch
         }
-        mutableState.value = mutableState.value.copy(saving = true, message = "正在保存并检查模型连接…")
+        mutableState.value = mutableState.value.copy(saving = true, message = "正在保存并测试模型…", testResult = null)
         repository.save(endpoint, imageModel, apiKey).onFailure {
             mutableState.value = mutableState.value.copy(saving = false, message = "保存失败，请检查相框连接和填写内容")
             return@launch
         }
-        repository.testConnection().onSuccess { test ->
+        repository.testConnection(allowBillableTest = true).onSuccess { test ->
             val message = when {
                 test.modelAvailable -> "模型连接成功：相框已联网，API Key 有效，当前生图模型可用。测试未生成图片，不会写入 TF 卡。"
                 test.authenticated -> "服务已连接且 API Key 有效，但当前模型不可用；请检查模型名称或开通权限。"
-                else -> testMessage(test.code)
+                else -> testMessage(test.code, test.providerMessage)
             }
             repository.read().onSuccess { config ->
-                mutableState.value = mutableState.value.copy(configuration = config, saving = false, message = message)
+                mutableState.value = mutableState.value.copy(configuration = config, saving = false, message = message, testResult = test)
             }.onFailure {
-                mutableState.value = mutableState.value.copy(saving = false, message = message)
+                mutableState.value = mutableState.value.copy(saving = false, message = message, testResult = test)
             }
         }.onFailure { error ->
             mutableState.value = mutableState.value.copy(saving = false, message = testMessage(error.message.orEmpty()))
         }
     }
 
-    private fun testMessage(code: String): String = when (code) {
+    fun testSaved() = viewModelScope.launch {
+        mutableState.value = mutableState.value.copy(saving = true, message = "正在测试已保存的模型…", testResult = null)
+        repository.testConnection(allowBillableTest = true).onSuccess { test ->
+            val message = when {
+                test.modelAvailable -> "模型连接成功：API Key 有效，当前图片模型可用。"
+                test.authenticated -> "API Key 有效，但当前模型不可用；请检查模型 ID 或开通权限。"
+                else -> testMessage(test.code, test.providerMessage)
+            }
+            mutableState.value = mutableState.value.copy(saving = false, message = message, testResult = test)
+        }.onFailure { error ->
+            mutableState.value = mutableState.value.copy(saving = false, message = testMessage(error.message.orEmpty()))
+        }
+    }
+
+    private fun testMessage(code: String, providerMessage: String = ""): String = when (code) {
+        "ai_http_400" -> "模型服务拒绝了本次验证：${providerMessage.ifBlank { "请检查模型 ID、API Key 权限和账户状态" }}"
         "ai_http_401" -> "模型服务已连接，但 API Key 无效或已失效。"
         "ai_http_403" -> "模型服务已连接，但当前 API Key 没有该模型的访问权限。"
         "ai_http_404", "ai_model_unavailable" -> "服务已连接，但未找到当前模型；请检查模型名称或接入点。"

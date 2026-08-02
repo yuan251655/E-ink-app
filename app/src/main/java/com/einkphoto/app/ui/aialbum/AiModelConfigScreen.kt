@@ -46,6 +46,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -134,6 +135,118 @@ internal fun validateAiConfigDraft(draft: AiConfigDraft, hasSavedCredential: Boo
 
 @Composable
 internal fun AiModelConfigScreen(
+    snapshot: AiConfigSnapshot,
+    onBack: () -> Unit,
+    newApiKey: String,
+    onNewApiKeyChange: (String) -> Unit,
+    onSave: (endpoint: String, imageModel: String, apiKey: String, testRequested: Boolean) -> Unit,
+    onTestSaved: () -> Unit = {},
+    onDelete: () -> Unit,
+    operationMessage: String?,
+    testResult: com.einkphoto.app.feature.aialbum.AiConnectionTest? = null,
+    saving: Boolean,
+    tutorialCurrentStep: Int,
+    tutorialCompletedSteps: Int,
+    onOpenTutorial: () -> Unit,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    var serviceUrl by rememberSaveable { mutableStateOf(snapshot.serviceUrl) }
+    var imageModel by rememberSaveable { mutableStateOf(snapshot.imageModel) }
+    var keyVisible by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
+    var showBillableConfirmation by rememberSaveable { mutableStateOf(false) }
+    var localMessage by rememberSaveable { mutableStateOf<String?>(null) }
+    val valid = serviceUrl.startsWith("https://") && imageModel.isNotBlank() &&
+        (snapshot.configured || newApiKey.length >= 8)
+    val savedFieldsUnchanged = snapshot.configured && newApiKey.isBlank() &&
+        serviceUrl.trim() == snapshot.serviceUrl && imageModel.trim() == snapshot.imageModel
+    LaunchedEffect(snapshot.serviceUrl, snapshot.imageModel) {
+        if (serviceUrl.isBlank()) serviceUrl = snapshot.serviceUrl
+        if (imageModel.isBlank()) imageModel = snapshot.imageModel
+    }
+
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("删除模型配置？") },
+            text = { Text("只删除相框中的模型配置，不会删除 AI 图片。") },
+            confirmButton = { TextButton(onClick = { showDeleteConfirmation = false; onDelete() }) { Text("删除") } },
+            dismissButton = { TextButton(onClick = { showDeleteConfirmation = false }) { Text("取消") } },
+        )
+    }
+    if (showBillableConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showBillableConfirmation = false },
+            title = { Text("确认测试模型？") },
+            text = { Text("测试会向模型服务发送一次最小生成请求，可能产生少量服务费用；结果不会下载到相框、不会写入 TF，也不会刷新屏幕。") },
+            confirmButton = { TextButton(onClick = { showBillableConfirmation = false; if (savedFieldsUnchanged) onTestSaved() else onSave(serviceUrl.trim(), imageModel.trim(), newApiKey, true) }) { Text(if (savedFieldsUnchanged) "测试模型" else "保存并测试") } },
+            dismissButton = { TextButton(onClick = { showBillableConfirmation = false }) { Text("取消") } },
+        )
+    }
+    Box(modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.TopCenter) {
+        Column(Modifier.fillMaxSize().widthIn(max = 720.dp)) {
+            ConfigHeader(onBack)
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item {
+                    Card(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(if (snapshot.configured) "模型已配置" else "尚未配置模型", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(if (snapshot.configured) "已保存 Key：${maskApiKeySuffix(snapshot.apiKeySuffix) ?: "已隐藏"}" else "填写官方配置文件中的三个字段即可。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                item {
+                    OutlinedTextField(value = serviceUrl, onValueChange = { serviceUrl = it; localMessage = null }, label = { Text("图片接口地址") }, supportingText = { Text("对应官方 config.txt 的 ai_url，仅支持 HTTPS") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = imageModel, onValueChange = { imageModel = it; localMessage = null }, label = { Text("图片模型 ID") }, supportingText = { Text("对应官方 config.txt 的 ai_model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(
+                        value = newApiKey,
+                        onValueChange = { onNewApiKeyChange(it); localMessage = null },
+                        label = { Text(if (snapshot.configured) "输入新的 API Key（留空则保留）" else "API Key") },
+                        supportingText = { Text("对应官方 config.txt 的 ai_key；保存后仅显示尾四位") },
+                        visualTransformation = if (keyVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = { IconButton(onClick = { keyVisible = !keyVisible }) { Icon(if (keyVisible) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility, null) } },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                testResult?.let { result -> item { SimpleTestResultCard(result) } }
+                item {
+                    (operationMessage ?: localMessage)?.let { message ->
+                        OutlinedCard(Modifier.fillMaxWidth()) { Text(message, Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        Spacer(Modifier.size(8.dp))
+                    }
+                    Button(onClick = { if (valid) showBillableConfirmation = true else localMessage = "请填写 HTTPS 接口地址、模型 ID 和有效 API Key" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                        Icon(Icons.Outlined.CheckCircle, null); Spacer(Modifier.size(8.dp)); Text(if (saving) "正在测试…" else if (savedFieldsUnchanged) "测试已保存模型" else "保存并测试")
+                    }
+                    OutlinedButton(onClick = { if (valid) onSave(serviceUrl.trim(), imageModel.trim(), newApiKey, false) else localMessage = "请先补全三个配置项" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("仅保存配置") }
+                    TextButton(onClick = { showDeleteConfirmation = true }, enabled = snapshot.configured && !saving, modifier = Modifier.fillMaxWidth()) { Text("清除配置", color = MaterialTheme.colorScheme.error) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SimpleTestResultCard(result: com.einkphoto.app.feature.aialbum.AiConnectionTest) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("模型测试结果", style = MaterialTheme.typography.titleMedium)
+            StatusLine("网络", if (result.networkReachable) "通过" else "未通过")
+            StatusLine("接口", if (result.endpointReachable) "通过" else "未通过")
+            StatusLine("API Key", if (result.authenticated) "通过" else "未确认")
+            StatusLine("模型", if (result.modelAvailable) "通过" else "未确认")
+            if (!result.modelAvailable) Text("${result.code}。未生成或保存正式图片。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+@Composable
+private fun LegacyAiModelConfigScreen(
     snapshot: AiConfigSnapshot,
     onBack: () -> Unit,
     newApiKey: String,
