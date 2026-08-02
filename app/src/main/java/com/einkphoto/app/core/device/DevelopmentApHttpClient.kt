@@ -249,6 +249,32 @@ class DevelopmentApHttpClient {
         }
     } }
 
+    /** PUT a small versioned product-API request. Credentials and conversation text are never logged. */
+    suspend fun putJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+        runCatching {
+            val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
+            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+                requestMethod = "PUT"
+                doOutput = true
+                connectTimeout = 5_000
+                readTimeout = 20_000
+                setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                setRequestProperty("Connection", "close")
+                setFixedLengthStreamingMode(payload.size)
+            }
+            try {
+                connection.outputStream.use { it.write(payload) }
+                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
+                    ?: error("HTTP ${connection.responseCode}")
+                JSONObject(stream.bufferedReader().use { it.readText() }).also { root ->
+                    if (!root.optBoolean("ok", false)) error(root.optString("code", "request_failed"))
+                }
+            } finally {
+                connection.disconnect()
+            }
+        }.onFailure { error -> Log.w("EInkDeviceHttp", "PUT $baseUrl$path failed", error) }
+    } }
+
     suspend fun deleteJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
@@ -515,12 +541,23 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
             onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
         )
 
-    override suspend fun jobStatus(jobId: DeviceJobId): LanTransportResult<DeviceJobSnapshot> =
-        client.get("/api/v1/jobs/${jobId.value}").fold(
-            onSuccess = { root -> parseJob(root.optJSONObject("data"))?.let { LanTransportResult.Success(it) }
-                ?: LanTransportResult.Failure(DeviceRejection.Unsupported) },
-            onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
+    override suspend fun jobStatus(jobId: DeviceJobId): LanTransportResult<DeviceJobSnapshot> {
+        // Job ids are device-issued opaque identifiers. Log only their bounded value and the
+        // state/error code; never log request bodies, Wi-Fi credentials, or provider tokens.
+        return client.get("/api/v1/jobs/${jobId.value}").fold(
+            onSuccess = { root ->
+                parseJob(root.optJSONObject("data"))?.also { job ->
+                    Log.d("EInkModeSwitch", "job=${jobId.value} state=${job.state} phase=${job.phase} error=${job.errorCode ?: "none"}")
+                }?.let { LanTransportResult.Success(it) }
+                    ?: LanTransportResult.Failure(DeviceRejection.Unsupported)
+            },
+            onFailure = { error ->
+                val rejection = rejectionFromError(error)
+                Log.w("EInkModeSwitch", "job=${jobId.value} query failed reason=$rejection")
+                LanTransportResult.Failure(rejection)
+            },
         )
+    }
 
     override suspend fun displayMedia(
         mediaId: String,
@@ -600,21 +637,33 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         feature: DeviceFeature,
         requestId: String,
         expectedRevision: Long,
-    ): LanTransportResult<DeviceJobId> = client.postJson(
-        "/api/v1/mode",
-        JSONObject()
-            .put("request_id", requestId)
-            .put("expected_revision", expectedRevision)
-            .put("target_feature", feature.apiValue),
-    ).fold(
-        onSuccess = { root ->
-            val data = root.optJSONObject("data")
-            val jobId = data?.optString("job_id").orEmpty()
-            if (jobId.isBlank()) LanTransportResult.Failure(DeviceRejection.Unsupported)
-            else LanTransportResult.Success(DeviceJobId(jobId))
-        },
-        onFailure = { error -> LanTransportResult.Failure(rejectionFromError(error)) },
-    )
+    ): LanTransportResult<DeviceJobId> {
+        Log.i("EInkModeSwitch", "submit target=${feature.apiValue} revision=$expectedRevision")
+        return client.postJson(
+            "/api/v1/mode",
+            JSONObject()
+                .put("request_id", requestId)
+                .put("expected_revision", expectedRevision)
+                .put("target_feature", feature.apiValue),
+        ).fold(
+            onSuccess = { root ->
+                val data = root.optJSONObject("data")
+                val jobId = data?.optString("job_id").orEmpty()
+                if (jobId.isBlank()) {
+                    Log.w("EInkModeSwitch", "submit target=${feature.apiValue} returned no job id")
+                    LanTransportResult.Failure(DeviceRejection.Unsupported)
+                } else {
+                    Log.i("EInkModeSwitch", "submit target=${feature.apiValue} accepted job=$jobId")
+                    LanTransportResult.Success(DeviceJobId(jobId))
+                }
+            },
+            onFailure = { error ->
+                val rejection = rejectionFromError(error)
+                Log.w("EInkModeSwitch", "submit target=${feature.apiValue} failed reason=$rejection")
+                LanTransportResult.Failure(rejection)
+            },
+        )
+    }
 
     private fun safeMediaId(mediaId: String): String? = mediaId.takeIf { it.matches(Regex("[A-Za-z0-9_-]{1,64}")) }
 
@@ -721,6 +770,10 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
     }
 
     private fun rejectionFromError(error: Throwable): DeviceRejection = when {
+        error.message?.contains("job_not_found", ignoreCase = true) == true ||
+            error.message?.contains("media_not_found", ignoreCase = true) == true ||
+            error.message?.contains("not_found", ignoreCase = true) == true ||
+            error.message?.contains("HTTP 404", ignoreCase = true) == true -> DeviceRejection.JobNotFound
         error.message?.contains("storage_no_space", ignoreCase = true) == true -> DeviceRejection.StorageNoSpace
         error.message?.contains("source_too_large", ignoreCase = true) == true || error.message?.contains("request_too_large", ignoreCase = true) == true -> DeviceRejection.SourceTooLarge
         error.message?.contains("storage", ignoreCase = true) == true -> DeviceRejection.StorageUnavailable

@@ -22,10 +22,10 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.Send
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Image
+import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material.icons.outlined.Paid
 import androidx.compose.material.icons.outlined.Schedule
@@ -72,9 +72,12 @@ import com.einkphoto.app.feature.aialbum.AiImageLoadState
 import com.einkphoto.app.feature.aialbum.AiImageUiState
 import com.einkphoto.app.feature.aialbum.AiConfigUiState
 import com.einkphoto.app.feature.aialbum.AiGenerationUiState
+import com.einkphoto.app.feature.aialbum.XiaozhiSettingsStatus
+import com.einkphoto.app.feature.aialbum.XiaozhiSettingsUiState
 import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
+import com.einkphoto.app.ui.components.DeviceConnectionBadge
 import com.einkphoto.app.ui.components.crossFeatureDisplayText
 import com.einkphoto.app.ui.components.modeCoverDrawableRes
 import com.einkphoto.app.ui.components.pressFeedbackClickable
@@ -85,7 +88,7 @@ import java.util.Locale
 
 internal enum class AiAlbumRoute(val title: String, val description: String) {
     Home("AI 相册", ""),
-    Chat("小智", ""),
+    XiaozhiSettings("小智 AI 设置", "管理语音互动与官方小智服务状态。"),
     Images("AI 图片", "这里将只管理 AI 相册生成的图片，不会混入本地相册内容。"),
     ImageDetail("图片详情", "查看 AI 图片信息与可用操作。"),
     Create("创建 AI 图片", "生图任务将在模型配置与设备接口接入后开放。"),
@@ -95,13 +98,16 @@ internal enum class AiAlbumRoute(val title: String, val description: String) {
     Usage("Token 与计费", "这里将区分实际用量、估算费用与官方账户余额。"),
 }
 
-internal fun isImmersiveAiConversation(route: AiAlbumRoute): Boolean = route == AiAlbumRoute.Chat
+// Xiaozhi settings owns its top app bar so the back icon, title and connection state remain
+// fixed while the settings content scrolls.
+internal fun isImmersiveAiConversation(route: AiAlbumRoute): Boolean = route == AiAlbumRoute.XiaozhiSettings
 
-internal fun aiBackDestination(current: AiAlbumRoute, configReturnRoute: AiAlbumRoute): AiAlbumRoute = when (current) {
+internal fun aiBackDestination(current: AiAlbumRoute): AiAlbumRoute = when (current) {
     AiAlbumRoute.ModelTutorial -> AiAlbumRoute.ModelConfig
-    AiAlbumRoute.ModelConfig -> if (configReturnRoute == AiAlbumRoute.Chat) AiAlbumRoute.Chat else AiAlbumRoute.Home
+    AiAlbumRoute.ModelConfig -> AiAlbumRoute.Home
     AiAlbumRoute.ImageDetail -> AiAlbumRoute.Images
     AiAlbumRoute.Images -> AiAlbumRoute.Home
+    AiAlbumRoute.XiaozhiSettings -> AiAlbumRoute.Home
     else -> AiAlbumRoute.Home
 }
 
@@ -156,24 +162,20 @@ fun AiAlbumHost(
     onDeleteAiConfig: () -> Unit = {},
     aiGenerationUiState: AiGenerationUiState = AiGenerationUiState(),
     onGenerateAiImage: (String) -> Unit = {},
+    xiaozhiSettingsUiState: XiaozhiSettingsUiState = XiaozhiSettingsUiState(),
     onConversationActiveChanged: (Boolean) -> Unit = {},
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
     var routeName by rememberSaveable { mutableStateOf(AiAlbumRoute.Home.name) }
-    var configReturnRouteName by rememberSaveable { mutableStateOf(AiAlbumRoute.Home.name) }
     var tutorialCurrentStep by rememberSaveable { mutableStateOf(0) }
     var tutorialCompletedSteps by rememberSaveable { mutableStateOf(emptyList<Int>()) }
     var selectedAiImageId by rememberSaveable { mutableStateOf<String?>(null) }
     // Secret is intentionally ordinary in-memory state: Config <-> Tutorial keeps it, but SavedState,
     // rotation/process recreation and a disposed AI host cannot restore it.
     var pendingApiKey by remember { mutableStateOf("") }
-    var draft by rememberSaveable { mutableStateOf("") }
-    var chatNotice by rememberSaveable { mutableStateOf<String?>(null) }
     val homeListState = rememberLazyListState()
-    val chatListState = rememberLazyListState()
     val aiImageGridState = rememberLazyGridState()
-    val chatMessages = rememberXiaozhiMessages()
     val stateHolder = rememberSaveableStateHolder()
     val route = AiAlbumRoute.entries.firstOrNull { it.name == routeName } ?: AiAlbumRoute.Home
     val runtimeAiImages = aiImageUiState.images.map { item ->
@@ -198,13 +200,9 @@ fun AiAlbumHost(
         errorMessage = aiImageUiState.errorMessage,
     )
     val navigate: (AiAlbumRoute) -> Unit = { routeName = it.name }
-    val openConfig: (AiAlbumRoute) -> Unit = { from ->
-        configReturnRouteName = from.name
-        routeName = AiAlbumRoute.ModelConfig.name
-    }
+    val openConfig = { routeName = AiAlbumRoute.ModelConfig.name }
     val back = {
-        val configReturnRoute = AiAlbumRoute.entries.firstOrNull { it.name == configReturnRouteName } ?: AiAlbumRoute.Home
-        routeName = aiBackDestination(route, configReturnRoute).name
+        routeName = aiBackDestination(route).name
     }
 
     LaunchedEffect(route, device.connection) {
@@ -223,30 +221,19 @@ fun AiAlbumHost(
             modeSwitchState = modeSwitchState,
             onSwitchMode = onSwitchMode,
             contentPadding = contentPadding,
-            onOpenChat = { navigate(AiAlbumRoute.Chat) },
-            onOpenConfig = { openConfig(AiAlbumRoute.Home) },
+            onOpenXiaozhiSettings = { navigate(AiAlbumRoute.XiaozhiSettings) },
+            onOpenConfig = openConfig,
             onNavigate = navigate,
             listState = homeListState,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.Chat) {
-        XiaozhiChatScreen(
-            messages = chatMessages,
-            draft = draft,
-            onDraftChange = {
-                draft = it
-                chatNotice = null
-            },
-            listState = chatListState,
-            online = device.connection == DeviceConnectionState.Online,
-            configured = aiConfigUiState.configuration.configured,
-            replying = false,
-            replyFailed = false,
-            notice = aiGenerationUiState.message ?: chatNotice,
-            onNotice = { chatNotice = it },
+    } else if (route == AiAlbumRoute.XiaozhiSettings) {
+        XiaozhiSettingsScreen(
+            device = device,
+            status = xiaozhiSettingsUiState.status,
+            loading = xiaozhiSettingsUiState.loading,
+            errorMessage = xiaozhiSettingsUiState.errorMessage,
             onBack = back,
-            onOpenConfig = { openConfig(AiAlbumRoute.Chat) },
-            onGenerateConfirmed = onGenerateAiImage,
             contentPadding = contentPadding,
             modifier = modifier,
         )
@@ -256,7 +243,6 @@ fun AiAlbumHost(
             currentContent = device.currentContent,
             listState = aiImageGridState,
             onBack = back,
-            onCreate = { routeName = AiAlbumRoute.Chat.name },
             onOpenDetails = { mediaId ->
                 val selected = filterAiImageRecords(runtimeAiImages).firstOrNull { it.id == mediaId }
                 if (selected != null) {
@@ -295,7 +281,7 @@ fun AiAlbumHost(
                     mode = AiServiceMode.Direct,
                     provider = "火山方舟",
                     serviceUrl = aiConfigUiState.configuration.endpoint,
-                    chatModel = "小智对话将在后续接入",
+                    chatModel = "文本推理模型将在图片生成服务中使用",
                     imageModel = aiConfigUiState.configuration.imageModel,
                     apiKeySuffix = aiConfigUiState.configuration.keyLast4,
                     lastVerifiedLabel = null,
@@ -356,7 +342,7 @@ private fun AiAlbumHomeScreen(
     modeSwitchState: ModeSwitchUiState,
     onSwitchMode: (DeviceFeature) -> Unit,
     contentPadding: PaddingValues,
-    onOpenChat: () -> Unit,
+    onOpenXiaozhiSettings: () -> Unit,
     onOpenConfig: () -> Unit,
     onNavigate: (AiAlbumRoute) -> Unit,
     listState: LazyListState,
@@ -376,7 +362,7 @@ private fun AiAlbumHomeScreen(
             item { AiCurrentDisplayCard(device) }
             item {
                 XiaozhiInputCard(
-                    onOpenChat = onOpenChat,
+                    onOpenSettings = onOpenXiaozhiSettings,
                     activeAiMode = device.activeFeature == DeviceFeature.AiAlbum,
                     deviceOnline = device.connection == DeviceConnectionState.Online,
                 )
@@ -484,7 +470,7 @@ private fun AiCurrentDisplayCard(device: DeviceSnapshot) {
 
 @Composable
 private fun XiaozhiInputCard(
-    onOpenChat: () -> Unit,
+    onOpenSettings: () -> Unit,
     activeAiMode: Boolean,
     deviceOnline: Boolean,
 ) {
@@ -500,13 +486,13 @@ private fun XiaozhiInputCard(
                 ) { Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text("小智", style = MaterialTheme.typography.titleLarge)
-                    Text("日常聊天与图片创作", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("语音唤醒、播报与服务状态", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-            Button(onClick = onOpenChat, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                Icon(Icons.AutoMirrored.Outlined.Send, null)
+            Button(onClick = onOpenSettings, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                Icon(Icons.Outlined.SettingsSuggest, null)
                 Spacer(Modifier.size(8.dp))
-                Text("进入对话")
+                Text("小智 AI 设置")
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Outlined.Mic, null, modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
@@ -519,6 +505,96 @@ private fun XiaozhiInputCard(
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun XiaozhiSettingsScreen(
+    device: DeviceSnapshot,
+    status: XiaozhiSettingsStatus,
+    loading: Boolean,
+    errorMessage: String?,
+    onBack: () -> Unit,
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    val connected = device.connection == DeviceConnectionState.Online
+    val statusLabel = when {
+        !connected -> "相框未连接"
+        loading -> "正在读取状态"
+        status.activationRequired -> "等待激活"
+        !status.started -> "服务未启动"
+        status.state.equals("ready", ignoreCase = true) -> "已就绪"
+        else -> status.state.ifBlank { "状态未知" }
+    }
+    val statusDetail = when {
+        !connected -> "请先连接相框，再查看或修改小智设置。"
+        loading -> "正在从相框读取小智运行状态。"
+        status.activationRequired -> "设备需要完成官方小智激活后才能开始语音互动。"
+        status.wakeWordEnabled -> "可以对相框说“你好，小智”开始语音互动。"
+        status.started -> "小智服务已启动，但当前语音唤醒未开启。"
+        else -> "请检查网络条件和官方小智服务状态。"
+    }
+    Box(modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.TopCenter) {
+        Column(
+            modifier = Modifier.fillMaxSize().widthIn(max = 720.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回 AI 相册")
+                }
+                Text("小智 AI 设置", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
+                DeviceConnectionBadge(snapshot = device)
+            }
+            LazyColumn(
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                item {
+                    Text("小智状态", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.size(10.dp))
+                    Card(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(statusLabel, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(statusDetail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            errorMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+                        }
+                    }
+                }
+                item {
+                    Text("官方小智服务", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.size(10.dp))
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(Icons.Outlined.Language, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(28.dp))
+                                Text("官方默认服务", style = MaterialTheme.typography.titleMedium)
+                            }
+                            Text("当前可在此查看相框的小智服务与激活状态。官方服务地址、自定义兼容服务和官方管理页面入口正在接入，暂不提供编辑，避免写入无效配置。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+                item {
+                    Text("网络条件", style = MaterialTheme.typography.titleMedium)
+                    Spacer(Modifier.size(10.dp))
+                    OutlinedCard(modifier = Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(if (connected) "相框已连接" else "相框未连接", style = MaterialTheme.typography.titleMedium)
+                            Text(
+                                if (connected) "小智需要相框的 STA 网络能够访问互联网；AP 仅用于手机连接和恢复配置。"
+                                else "连接相框后可读取小智状态；如需修改网络，请前往设置中的网络配置。",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         }
     }

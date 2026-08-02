@@ -51,7 +51,7 @@ class ModeSwitchViewModel(private val session: DeviceSession) : ViewModel() {
             return
         }
         viewModelScope.launch {
-            mutableState.value = ModeSwitchUiState(target = target, phase = ModeSwitchPhase.Queued, message = "正在提交模式切换")
+            mutableState.value = ModeSwitchUiState(target = target, phase = ModeSwitchPhase.Queued, message = "正在提交切换请求，设备确认完成前不会改变当前模式")
             when (val submission = session.requestFeatureSwitch(target)) {
                 is DeviceCommandResult.Accepted -> awaitTerminal(target, submission.value)
                 is DeviceCommandResult.Rejected -> mutableState.value = ModeSwitchUiState(
@@ -134,6 +134,8 @@ class ModeSwitchViewModel(private val session: DeviceSession) : ViewModel() {
         ModeSwitchPhase.Success -> "模式切换完成"
         ModeSwitchPhase.Failed -> when (errorCode) {
             "display_busy" -> "墨水屏正在刷新，请稍后重新切换"
+            "display_timeout", "display_timed_out" -> "墨水屏刷新超时，原模式和原画面保持不变，请稍后重试"
+            "display_failed" -> "墨水屏未能完成模式提示画面刷新，原模式和原画面保持不变"
             "mode_cover_unavailable" -> "模式提示画面不可用，原模式保持不变"
             else -> "切换失败，原模式和原画面保持不变"
         }
@@ -145,6 +147,7 @@ class ModeSwitchViewModel(private val session: DeviceSession) : ViewModel() {
         DeviceRejection.DisplayBusy, DeviceRejection.ModeSwitchBusy -> "相框正在执行其他刷新任务，请稍后重试"
         DeviceRejection.RevisionConflict -> "设备模式刚刚发生变化，请重新点击切换"
         DeviceRejection.TimedOut -> "模式切换超时，原模式保持不变"
+        DeviceRejection.JobNotFound -> "设备未找到本次切换任务，模式没有确认完成。请刷新设备状态后重试"
         else -> "暂时无法切换模式，请稍后重试"
     }
 }

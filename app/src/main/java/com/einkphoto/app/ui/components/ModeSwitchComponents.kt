@@ -15,6 +15,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -109,6 +110,46 @@ fun ModeSwitchStatusCard(
                 state.message?.let {
                     Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+    }
+}
+
+/**
+ * A device mode change affects the whole product, not only the tab that
+ * initiated it. Keep its pending/failed state visible above every main page.
+ * Success is deliberately omitted: the authoritative page header then shows
+ * the new current mode without leaving a permanent operation banner.
+ */
+@Composable
+fun ModeSwitchGlobalStatus(
+    state: ModeSwitchUiState,
+    modifier: Modifier = Modifier,
+) {
+    if (state.phase in setOf(ModeSwitchPhase.Idle, ModeSwitchPhase.Success)) return
+    val failed = state.phase == ModeSwitchPhase.Failed
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        color = if (failed) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+        contentColor = if (failed) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer,
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = if (failed) Icons.Outlined.ErrorOutline else Icons.Outlined.Refresh,
+                contentDescription = null,
+            )
+            Column {
+                val targetName = state.target?.displayName() ?: "目标模式"
+                Text(
+                    if (failed) "未切换到$targetName" else "正在切换到$targetName",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                )
+                state.message?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
             }
         }
     }

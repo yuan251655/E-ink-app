@@ -105,5 +105,7 @@ enum class DeviceRejection {
     ModeSwitchBusy,
     RevisionConflict,
     TimedOut,
+    /** The device no longer has the asynchronous job requested by the App. */
+    JobNotFound,
     Unsupported,
 }

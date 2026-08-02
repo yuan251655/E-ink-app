@@ -35,6 +35,7 @@ class FakeDeviceSession(
     private var jobSequence = 0
     private var pendingFeatureSwitch: PendingFeatureSwitch? = null
     private val completedJobs = mutableMapOf<DeviceJobId, DeviceJobSnapshot>()
+    private val expiredJobs = mutableSetOf<DeviceJobId>()
 
     override suspend fun refreshSnapshot(): DeviceCommandResult<DeviceSnapshot> =
         DeviceCommandResult.Accepted(mutableSnapshot.value)
@@ -62,6 +63,7 @@ class FakeDeviceSession(
 
     override suspend fun modeSwitchJob(jobId: DeviceJobId): DeviceCommandResult<DeviceJobSnapshot> {
         completedJobs[jobId]?.let { return DeviceCommandResult.Accepted(it) }
+        if (jobId in expiredJobs) return DeviceCommandResult.Rejected(DeviceRejection.JobNotFound)
         val pending = pendingFeatureSwitch
         return if (pending?.jobId == jobId) {
             DeviceCommandResult.Accepted(DeviceJobSnapshot(jobId, DeviceJobState.Running, "refreshing", 55, null, null))
@@ -111,6 +113,18 @@ class FakeDeviceSession(
         )
         pendingFeatureSwitch = null
         return completed
+    }
+
+    /** Simulates a device restart or job-record cleanup while an App is polling a switch. */
+    fun expireFeatureSwitchJob() {
+        val pending = pendingFeatureSwitch ?: return
+        expiredJobs += pending.jobId
+        mutableSnapshot.value = mutableSnapshot.value.copy(
+            pendingFeature = null,
+            modeState = DeviceModeState.Idle,
+            modeSwitchJobId = null,
+        )
+        pendingFeatureSwitch = null
     }
 
     private data class PendingFeatureSwitch(

@@ -31,7 +31,6 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -130,7 +129,6 @@ internal fun AiImageLibraryScreen(
     currentContent: DeviceCurrentContent?,
     listState: LazyGridState,
     onBack: () -> Unit,
-    onCreate: () -> Unit,
     onOpenDetails: (String) -> Unit,
     onRetry: () -> Unit,
     contentPadding: PaddingValues,
@@ -171,14 +169,7 @@ internal fun AiImageLibraryScreen(
                         CenterState(
                             icon = { Icon(Icons.Outlined.PhotoLibrary, contentDescription = null, modifier = Modifier.size(42.dp), tint = MaterialTheme.colorScheme.primary) },
                             title = AI_IMAGE_EMPTY_TITLE,
-                            detail = "和小智描述你想要的画面，生成完成后会出现在这里。",
-                            action = {
-                                Button(onClick = onCreate, modifier = Modifier.heightIn(min = 50.dp)) {
-                                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                                    Spacer(Modifier.size(8.dp))
-                                    Text("去和小智创作")
-                                }
-                            },
+                            detail = "AI 图片生成功能准备中。完成模型配置并接入图片生成服务后，生成结果会出现在这里。",
                         )
                     } else {
                         LazyVerticalGrid(
@@ -513,37 +504,37 @@ private val previewCurrentContent = DeviceCurrentContent(DeviceContentKind.Media
 @Preview(name = "AI 图片 空态", showBackground = true, widthDp = 393, heightDp = 852)
 @Composable
 private fun AiImageLibraryEmptyPreview() = EInkPhotoTheme(darkTheme = false) {
-    AiImageLibraryScreen(AiImageLibraryState.Ready(emptyList()), null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, {}, PaddingValues())
+    AiImageLibraryScreen(AiImageLibraryState.Ready(emptyList()), null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, PaddingValues())
 }
 
 @Preview(name = "AI 图片 两列数据", showBackground = true, widthDp = 393, heightDp = 852)
 @Composable
 private fun AiImageLibraryDataPreview() = EInkPhotoTheme(darkTheme = false) {
-    AiImageLibraryScreen(AiImageLibraryState.Ready(previewAiImages), previewCurrentContent, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, {}, PaddingValues())
+    AiImageLibraryScreen(AiImageLibraryState.Ready(previewAiImages), previewCurrentContent, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, PaddingValues())
 }
 
 @Preview(name = "AI 图片 离线深色大字体", showBackground = true, widthDp = 393, heightDp = 852, fontScale = 1.5f)
 @Composable
 private fun AiImageLibraryOfflinePreview() = EInkPhotoTheme(darkTheme = true) {
-    AiImageLibraryScreen(AiImageLibraryState.Offline, null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, {}, PaddingValues())
+    AiImageLibraryScreen(AiImageLibraryState.Offline, null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, PaddingValues())
 }
 
 @Preview(name = "AI 图片 加载态", showBackground = true, widthDp = 393, heightDp = 852)
 @Composable
 private fun AiImageLibraryLoadingPreview() = EInkPhotoTheme(darkTheme = false) {
-    AiImageLibraryScreen(AiImageLibraryState.Loading, null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, {}, PaddingValues())
+    AiImageLibraryScreen(AiImageLibraryState.Loading, null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, PaddingValues())
 }
 
 @Preview(name = "AI 图片 错误态", showBackground = true, widthDp = 393, heightDp = 852)
 @Composable
 private fun AiImageLibraryErrorPreview() = EInkPhotoTheme(darkTheme = false) {
-    AiImageLibraryScreen(AiImageLibraryState.Error("相框返回的数据无法读取，请稍后重试。"), null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, {}, PaddingValues())
+    AiImageLibraryScreen(AiImageLibraryState.Error("相框返回的数据无法读取，请稍后重试。"), null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, PaddingValues())
 }
 
 @Preview(name = "AI 图片 横屏大字体可滚动", showBackground = true, widthDp = 720, heightDp = 360, fontScale = 1.5f)
 @Composable
 private fun AiImageLibraryCompactLargePreview() = EInkPhotoTheme(darkTheme = false) {
-    AiImageLibraryScreen(AiImageLibraryState.Error("暂时无法读取 AI 图片，请稍后再试。"), null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, {}, PaddingValues())
+    AiImageLibraryScreen(AiImageLibraryState.Error("暂时无法读取 AI 图片，请稍后再试。"), null, androidx.compose.foundation.lazy.grid.rememberLazyGridState(), {}, {}, {}, PaddingValues())
 }
 
 @Preview(name = "AI 图片详情 横屏", showBackground = true, widthDp = 720, heightDp = 360)

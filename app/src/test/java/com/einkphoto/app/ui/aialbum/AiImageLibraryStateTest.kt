@@ -35,8 +35,8 @@ class AiImageLibraryStateTest {
     }
 
     @Test fun detailsAndLibraryBackChainIsStable() {
-        assertEquals(AiAlbumRoute.Images, aiBackDestination(AiAlbumRoute.ImageDetail, AiAlbumRoute.Home))
-        assertEquals(AiAlbumRoute.Home, aiBackDestination(AiAlbumRoute.Images, AiAlbumRoute.Home))
+        assertEquals(AiAlbumRoute.Images, aiBackDestination(AiAlbumRoute.ImageDetail))
+        assertEquals(AiAlbumRoute.Home, aiBackDestination(AiAlbumRoute.Images))
     }
 
     @Test fun imageSizeFormattingIsReadableAndBounded() {

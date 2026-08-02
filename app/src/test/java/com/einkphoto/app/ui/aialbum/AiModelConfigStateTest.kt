@@ -35,19 +35,14 @@ class AiModelConfigStateTest {
         assertEquals(setOf("服务地址", "对话模型", "生图模型"), checks.filter { it.state == AiFieldState.Invalid }.map { it.label }.toSet())
     }
 
-    @Test fun configurationReturnsToItsExplicitSource() {
-        assertEquals(AiAlbumRoute.Chat, aiBackDestination(AiAlbumRoute.ModelConfig, AiAlbumRoute.Chat))
-        assertEquals(AiAlbumRoute.Home, aiBackDestination(AiAlbumRoute.ModelConfig, AiAlbumRoute.Home))
+    @Test fun configurationReturnsToAiAlbumHome() {
+        assertEquals(AiAlbumRoute.Home, aiBackDestination(AiAlbumRoute.ModelConfig))
     }
 
-    @Test fun tutorialAlwaysReturnsToConfigBeforeConfigReturnsToItsSource() {
-        val fromHome = aiBackDestination(AiAlbumRoute.ModelTutorial, AiAlbumRoute.Home)
-        assertEquals(AiAlbumRoute.ModelConfig, fromHome)
-        assertEquals(AiAlbumRoute.Home, aiBackDestination(fromHome, AiAlbumRoute.Home))
-
-        val fromChat = aiBackDestination(AiAlbumRoute.ModelTutorial, AiAlbumRoute.Chat)
-        assertEquals(AiAlbumRoute.ModelConfig, fromChat)
-        assertEquals(AiAlbumRoute.Chat, aiBackDestination(fromChat, AiAlbumRoute.Chat))
+    @Test fun tutorialAlwaysReturnsToConfigBeforeConfigReturnsHome() {
+        val fromTutorial = aiBackDestination(AiAlbumRoute.ModelTutorial)
+        assertEquals(AiAlbumRoute.ModelConfig, fromTutorial)
+        assertEquals(AiAlbumRoute.Home, aiBackDestination(fromTutorial))
     }
 
     @Test fun tutorialProgressIsBoundedAndStepsNavigateSafely() {

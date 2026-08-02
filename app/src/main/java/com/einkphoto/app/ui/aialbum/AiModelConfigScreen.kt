@@ -225,7 +225,7 @@ internal fun AiModelConfigScreen(
                         value = chatModel,
                         onValueChange = { chatModel = it; actionMessage = null },
                         label = { Text("对话模型 / 接入点 ID") },
-                        supportingText = { Text("用于小智日常文字对话") },
+                        supportingText = { Text("用于后续 AI 图片生成服务的文本推理模型或接入点") },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     OutlinedTextField(
@@ -334,7 +334,7 @@ internal fun AiModelConfigScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirmation = false },
             title = { Text("删除 AI 配置？") },
-            text = { Text("删除后将无法使用 AI 对话和图片生成。已生成的 AI 图片和用量记录不会删除。") },
+            text = { Text("删除后将无法使用 AI 图片生成服务。已生成的 AI 图片和用量记录不会删除。") },
             confirmButton = {
                 TextButton(
                     onClick = {

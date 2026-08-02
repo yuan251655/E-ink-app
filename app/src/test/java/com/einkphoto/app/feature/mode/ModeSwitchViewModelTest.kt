@@ -40,6 +40,20 @@ class ModeSwitchViewModelTest {
 
         assertEquals(ModeSwitchPhase.Failed, viewModel.state.value.phase)
         assertEquals(DeviceFeature.LocalAlbum, session.snapshot.value.activeFeature)
-        assertEquals("切换失败，原模式和原画面保持不变", viewModel.state.value.message)
+        assertEquals("墨水屏未能完成模式提示画面刷新，原模式和原画面保持不变", viewModel.state.value.message)
+    }
+
+    @Test fun missingDeviceJobIsExplainedWithoutChangingTheConfirmedMode() = runTest(mainDispatcherRule.dispatcher) {
+        val session = FakeDeviceSession()
+        val viewModel = ModeSwitchViewModel(session)
+
+        viewModel.switchTo(DeviceFeature.AiAlbum)
+        runCurrent()
+        session.expireFeatureSwitchJob()
+        advanceUntilIdle()
+
+        assertEquals(ModeSwitchPhase.Failed, viewModel.state.value.phase)
+        assertEquals(DeviceFeature.LocalAlbum, session.snapshot.value.activeFeature)
+        assertEquals("设备未找到本次切换任务，模式没有确认完成。请刷新设备状态后重试", viewModel.state.value.message)
     }
 }
