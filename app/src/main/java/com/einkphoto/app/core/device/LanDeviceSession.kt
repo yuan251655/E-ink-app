@@ -77,6 +77,18 @@ interface LanDeviceTransport {
         order: String,
     ): PlaybackTransportResult = PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
 
+    /** AI playback has the same wire shape as local playback, but is a separate device domain. */
+    suspend fun aiAlbumPlayback(): PlaybackTransportResult =
+        PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
+
+    suspend fun saveAiAlbumPlayback(
+        requestId: String,
+        expectedRevision: Long,
+        mode: String,
+        intervalSeconds: Int,
+        order: String,
+    ): PlaybackTransportResult = PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
+
     suspend fun switchFeature(
         feature: DeviceFeature,
         requestId: String,

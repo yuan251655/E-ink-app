@@ -49,6 +49,7 @@ import com.einkphoto.app.feature.aialbum.AiConfigRepository
 import com.einkphoto.app.feature.aialbum.AiConfigViewModel
 import com.einkphoto.app.feature.aialbum.AiGenerationViewModel
 import com.einkphoto.app.feature.aialbum.AiGenerationRepository
+import com.einkphoto.app.feature.aialbum.AiPlaybackViewModel
 import com.einkphoto.app.feature.mode.ModeSwitchPhase
 import com.einkphoto.app.ui.components.ModeSwitchGlobalStatus
 import kotlinx.coroutines.delay
@@ -110,6 +111,8 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         },
     )
     val aiGenerationState by aiGenerationViewModel.state.collectAsState()
+    val aiPlaybackViewModel: AiPlaybackViewModel = viewModel(key = "ai-playback")
+    val aiPlaybackState by aiPlaybackViewModel.state.collectAsState()
     val networkRepository = remember { LanNetworkRepository() }
     val storageRepository = remember { LanStorageRepository() }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
@@ -221,6 +224,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onDeleteAiImage = aiImageViewModel::delete,
                 onSaveAiImageToPhone = aiImageViewModel::saveToPhone,
                 onSetAiPlaybackStart = aiImageViewModel::playbackStartUnavailable,
+                aiPlayback = aiPlaybackState,
+                onRefreshAiPlayback = aiPlaybackViewModel::refresh,
+                onSaveAiPlayback = aiPlaybackViewModel::save,
                 aiConfigUiState = aiConfigState,
                 onRefreshAiConfig = aiConfigViewModel::refresh,
                 onSaveAiConfig = { endpoint, model, key, testRequested ->

@@ -637,6 +637,45 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         )
     }
 
+    override suspend fun aiAlbumPlayback(): PlaybackTransportResult =
+        client.get("/api/v1/ai-album/playback").fold(
+            onSuccess = { root -> parsePlayback(root.optJSONObject("data"))?.let(PlaybackTransportResult::Success)
+                ?: PlaybackTransportResult.Failure(DeviceRejection.Unsupported) },
+            onFailure = { error -> PlaybackTransportResult.Failure(rejectionFromError(error)) },
+        )
+
+    override suspend fun saveAiAlbumPlayback(
+        requestId: String,
+        expectedRevision: Long,
+        mode: String,
+        intervalSeconds: Int,
+        order: String,
+    ): PlaybackTransportResult {
+        if (mode !in setOf("auto", "paused") || order !in setOf("sequential", "random") ||
+            intervalSeconds !in setOf(300, 900, 1800, 3600, 10800, 21600, 43200, 86400)
+        ) return PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
+        return client.postJson(
+            "/api/v1/ai-album/playback",
+            JSONObject()
+                .put("request_id", requestId)
+                .put("expected_revision", expectedRevision)
+                .put("mode", mode)
+                .put("interval_seconds", intervalSeconds)
+                .put("order", order),
+        ).fold(
+            onSuccess = { root -> parsePlayback(root.optJSONObject("data"))?.let(PlaybackTransportResult::Success)
+                ?: PlaybackTransportResult.Failure(DeviceRejection.Unsupported) },
+            onFailure = { error ->
+                if (error.message?.contains("revision_conflict", ignoreCase = true) == true) {
+                    when (val latest = aiAlbumPlayback()) {
+                        is PlaybackTransportResult.Success -> PlaybackTransportResult.RevisionConflict(latest.snapshot)
+                        else -> PlaybackTransportResult.RevisionConflict(null)
+                    }
+                } else PlaybackTransportResult.Failure(rejectionFromError(error))
+            },
+        )
+    }
+
 
     override suspend fun switchFeature(
         feature: DeviceFeature,

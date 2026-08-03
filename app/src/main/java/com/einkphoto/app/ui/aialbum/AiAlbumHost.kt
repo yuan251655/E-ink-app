@@ -39,6 +39,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -77,6 +78,10 @@ import com.einkphoto.app.feature.aialbum.AiImageLoadState
 import com.einkphoto.app.feature.aialbum.AiImageUiState
 import com.einkphoto.app.feature.aialbum.AiConfigUiState
 import com.einkphoto.app.feature.aialbum.AiGenerationUiState
+import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
+import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
+import com.einkphoto.app.feature.localalbum.model.PlayMode
+import com.einkphoto.app.feature.localalbum.model.PlayOrder
 import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
@@ -153,6 +158,9 @@ fun AiAlbumHost(
     onDeleteAiImage: (String) -> Unit = {},
     onSaveAiImageToPhone: (String) -> Unit = {},
     onSetAiPlaybackStart: () -> Unit = {},
+    aiPlayback: PlaybackSettings = PlaybackSettings(PlayMode.Paused, PlayOrder.Sequential, 1800),
+    onRefreshAiPlayback: () -> Unit = {},
+    onSaveAiPlayback: (PlayMode, PlayOrder, Int) -> Unit = { _, _, _ -> },
     aiConfigUiState: AiConfigUiState = AiConfigUiState(),
     onRefreshAiConfig: () -> Unit = {},
     onSaveAiConfig: (String, String, String, Boolean) -> Unit = { _, _, _, _ -> },
@@ -211,12 +219,14 @@ fun AiAlbumHost(
             device.connection == DeviceConnectionState.Online
         ) onRefreshAiImages()
         if (route == AiAlbumRoute.ModelConfig && device.connection == DeviceConnectionState.Online) onRefreshAiConfig()
+        if (route == AiAlbumRoute.Playback && device.connection == DeviceConnectionState.Online) onRefreshAiPlayback()
     }
     BackHandler(enabled = route != AiAlbumRoute.Home, onBack = back)
     if (route == AiAlbumRoute.Home) {
         AiAlbumHomeScreen(
             device = device,
             aiImages = runtimeAiImages,
+            playback = aiPlayback,
             modeSwitchState = modeSwitchState,
             onSwitchMode = onSwitchMode,
             contentPadding = contentPadding,
@@ -316,6 +326,8 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
+    } else if (route == AiAlbumRoute.Playback) {
+        AiPlaybackSettingsScreen(aiPlayback, onSaveAiPlayback, back, contentPadding, modifier)
     } else {
         AiAlbumSubpageSkeleton(route, back, contentPadding, modifier)
     }
@@ -345,6 +357,7 @@ private fun formatAiImageTime(epochMillis: Long): String = if (epochMillis > 0L)
 private fun AiAlbumHomeScreen(
     device: DeviceSnapshot,
     aiImages: List<AiImageRecord>,
+    playback: PlaybackSettings,
     modeSwitchState: ModeSwitchUiState,
     onSwitchMode: (DeviceFeature) -> Unit,
     contentPadding: PaddingValues,
@@ -369,6 +382,7 @@ private fun AiAlbumHomeScreen(
                 AiCurrentDisplayCard(
                     device = device,
                     currentAiImage = aiImages.firstOrNull { it.id == device.currentContent?.mediaId },
+                    playback = playback,
                 )
             }
             item {
@@ -407,9 +421,25 @@ private fun AiAlbumHomeScreen(
 }
 
 @Composable
+private fun AiPlaybackSettingsScreen(state: PlaybackSettings, onSave: (PlayMode, PlayOrder, Int) -> Unit, onBack: () -> Unit, contentPadding: PaddingValues, modifier: Modifier) {
+    var mode by remember(state.mode) { mutableStateOf(state.mode) }; var order by remember(state.order) { mutableStateOf(state.order) }; var interval by remember(state.intervalSeconds) { mutableStateOf(state.intervalSeconds) }
+    Column(modifier.fillMaxSize().padding(contentPadding).padding(horizontal = 16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回 AI 相册") }; Column { Text("AI 轮播设置", style = MaterialTheme.typography.titleLarge); Text("仅播放 AI 相册图片", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
+        LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
+            item { Text(if (state.mode == PlayMode.Auto) "正在轮播" else "轮播已暂停", style = MaterialTheme.typography.titleMedium); Text(if (state.mode == PlayMode.Auto) "下次切换：${state.nextPlayInSeconds?.let { "约 ${it / 60 + 1} 分钟后" } ?: "等待设备计时"}" else "当前图片将保持不变", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Text("播放模式", style = MaterialTheme.typography.titleMedium); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(mode == PlayMode.Auto, { mode = PlayMode.Auto }, { Text("自动轮播") }, Modifier.weight(1f)); FilterChip(mode == PlayMode.Paused, { mode = PlayMode.Paused }, { Text("暂停轮播") }, Modifier.weight(1f)) } }
+            item { Text("轮播间隔", style = MaterialTheme.typography.titleMedium); Spacer(Modifier.size(6.dp)); listOf(300 to "5 分钟",900 to "15 分钟",1800 to "30 分钟",3600 to "1 小时",10800 to "3 小时",21600 to "6 小时",43200 to "12 小时",86400 to "24 小时").chunked(2).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) { row.forEach { (v,l) -> FilterChip(interval == v, { interval = v }, { Text(l) }, Modifier.weight(1f).heightIn(min = 48.dp)) } }; Spacer(Modifier.size(10.dp)) } }
+            item { Text("播放顺序", style = MaterialTheme.typography.titleMedium); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(order == PlayOrder.Sequential, { order = PlayOrder.Sequential }, { Text("顺序") }); FilterChip(order == PlayOrder.Random, { order = PlayOrder.Random }, { Text("随机") }) } }
+            item { Button(onClick = { onSave(mode, order, interval) }, enabled = state.syncState == PlaybackSyncState.Ready, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (state.syncState == PlaybackSyncState.Saving) "正在保存…" else "保存到相册") }; Text(when (state.syncState) { PlaybackSyncState.Offline -> "相框未连接，无法保存"; PlaybackSyncState.Conflict -> "设备设置已变化，请确认后重新保存"; PlaybackSyncState.Loading -> "正在读取设备设置"; else -> "设置将独立保存到 AI 相册" }, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+    }
+}
+
+@Composable
 private fun AiCurrentDisplayCard(
     device: DeviceSnapshot,
     currentAiImage: AiImageRecord?,
+    playback: PlaybackSettings,
 ) {
     val presentation = aiCurrentDisplayPresentation(device)
     val owner = device.currentContent?.ownerFeature ?: device.activeFeature
@@ -454,6 +484,19 @@ private fun AiCurrentDisplayCard(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (presentation == AiCurrentDisplayPresentation.AiMedia && playback.mode == PlayMode.Auto) {
+                val nextTime = playback.nextPlayInSeconds?.let { seconds ->
+                    SimpleDateFormat("HH:mm", Locale.getDefault()).format(
+                        Date(System.currentTimeMillis() + seconds.coerceAtLeast(0) * 1_000L),
+                    )
+                }
+                Text(
+                    nextTime?.let { "下一次切换：$it" } ?: "下一次切换：等待设备计时",
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
     }
 }
