@@ -33,9 +33,11 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
@@ -52,6 +54,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -93,8 +96,17 @@ internal fun AiGenerationChatScreen(
     var expandedPreview by rememberSaveable { mutableStateOf(false) }
     var expandedHistoryPreview by rememberSaveable { mutableStateOf<AiGenerationPreview?>(null) }
     var composerExpanded by rememberSaveable { mutableStateOf(false) }
+    var selectedTemplateCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedTemplateId by rememberSaveable { mutableStateOf<String?>(null) }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
+    val context = LocalContext.current
+    val promptTemplates by produceState<List<AiPromptTemplate>>(initialValue = emptyList(), context) {
+        value = withContext(Dispatchers.IO) { AiPromptTemplateCatalog.load(context) }
+    }
+    val selectedTemplateCategory = selectedTemplateCategoryName?.let { name ->
+        AiPromptTemplateCategory.entries.firstOrNull { it.name == name }
+    }
     val inputEnabled = state.phase !in setOf(
         AiGenerationPhase.CreatingPreview,
         AiGenerationPhase.WaitingToSubmit,
@@ -195,6 +207,21 @@ internal fun AiGenerationChatScreen(
         GenerationInputBar(
             draft = draft,
             onDraftChange = { draft = it.take(500) },
+            promptTemplates = promptTemplates,
+            selectedTemplateCategory = selectedTemplateCategory,
+            onChooseTemplate = { category, useAnother ->
+                val template = AiPromptTemplateCatalog.choose(
+                    templates = promptTemplates,
+                    category = category,
+                    previousId = if (useAnother) selectedTemplateId else null,
+                )
+                if (template != null) {
+                    selectedTemplateCategoryName = category.name
+                    selectedTemplateId = template.id
+                    draft = template.text.take(500)
+                    composerExpanded = true
+                }
+            },
             enabled = inputEnabled,
             // Once there is an existing preview or any recovered history, keep the composer
             // collapsed so the conversation list remains the primary scrollable area.
@@ -542,6 +569,9 @@ private fun historyTime(epochMillis: Long): String = SimpleDateFormat("yyyy-MM-d
 private fun GenerationInputBar(
     draft: String,
     onDraftChange: (String) -> Unit,
+    promptTemplates: List<AiPromptTemplate>,
+    selectedTemplateCategory: AiPromptTemplateCategory?,
+    onChooseTemplate: (AiPromptTemplateCategory, Boolean) -> Unit,
     enabled: Boolean,
     compact: Boolean,
     onExpand: () -> Unit,
@@ -559,6 +589,12 @@ private fun GenerationInputBar(
             }
         } else Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("图片描述", style = MaterialTheme.typography.labelLarge)
+            TemplatePromptPicker(
+                templatesAvailable = promptTemplates.isNotEmpty(),
+                selectedCategory = selectedTemplateCategory,
+                enabled = enabled,
+                onChoose = onChooseTemplate,
+            )
             androidx.compose.material3.OutlinedTextField(
                 value = draft,
                 onValueChange = onDraftChange,
@@ -577,6 +613,73 @@ private fun GenerationInputBar(
                 Icon(Icons.AutoMirrored.Outlined.Send, contentDescription = null)
                 Spacer(Modifier.size(8.dp))
                 Text("生成预览")
+            }
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalMaterial3Api::class)
+private fun TemplatePromptPicker(
+    templatesAvailable: Boolean,
+    selectedCategory: AiPromptTemplateCategory?,
+    enabled: Boolean,
+    onChoose: (AiPromptTemplateCategory, Boolean) -> Unit,
+) {
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.size(8.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("模板生图", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        selectedCategory?.let { "已选择${it.title}模板，可继续编辑描述" } ?: "从模板随机填入一段图片描述",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                if (selectedCategory != null) {
+                    TextButton(
+                        onClick = { onChoose(selectedCategory, true) },
+                        enabled = enabled && templatesAvailable,
+                    ) { Text("换一条") }
+                } else {
+                    TextButton(
+                        onClick = { showPicker = true },
+                        enabled = enabled && templatesAvailable,
+                    ) { Text("选择") }
+                }
+            }
+        }
+    }
+    if (showPicker) {
+        ModalBottomSheet(onDismissRequest = { showPicker = false }) {
+            Column(
+                Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 28.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("选择模板类别", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text("随机填入一条模板；填入后仍可自由编辑。", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                AiPromptTemplateCategory.entries.chunked(2).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        row.forEach { category ->
+                            OutlinedButton(
+                                onClick = {
+                                    onChoose(category, false)
+                                    showPicker = false
+                                },
+                                enabled = templatesAvailable && enabled,
+                                modifier = Modifier.weight(1f).heightIn(min = 56.dp),
+                            ) {
+                                Icon(Icons.Outlined.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.size(6.dp))
+                                Text(category.title)
+                            }
+                        }
+                    }
+                }
             }
         }
     }

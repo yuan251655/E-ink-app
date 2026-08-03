@@ -27,7 +27,6 @@ import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Mic
-import androidx.compose.material.icons.outlined.Paid
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.SettingsSuggest
 import androidx.compose.material3.Button
@@ -105,7 +104,6 @@ internal enum class AiAlbumRoute(val title: String, val description: String) {
     ModelEditor("模型配置", ""),
     ModelSwitch("切换模型", ""),
     ModelTutorial(MODEL_TUTORIAL_TITLE, "按照七个步骤完成模型服务配置。"),
-    Usage("Token 与计费", "这里将区分实际用量、估算费用与官方账户余额。"),
 }
 
 internal fun aiBackDestination(current: AiAlbumRoute): AiAlbumRoute = when (current) {
@@ -464,10 +462,13 @@ private fun AiAlbumHomeScreen(
                         AiShortcutCard(Icons.Outlined.Collections, "AI 图片", "查看生成记录", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Images) }
                         AiShortcutCard(Icons.Outlined.Schedule, "轮播设置", "仅播放 AI 图片", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Playback) }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        AiShortcutCard(Icons.Outlined.SettingsSuggest, "模型配置", "服务与密钥", Modifier.weight(1f), onClick = onOpenConfig)
-                        AiShortcutCard(Icons.Outlined.Paid, "用量计费", "Token 与预算", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Usage) }
-                    }
+                    AiShortcutCard(
+                        Icons.Outlined.SettingsSuggest,
+                        "模型配置",
+                        "服务与密钥",
+                        Modifier.fillMaxWidth(),
+                        onClick = onOpenConfig,
+                    )
                 }
             }
         }
