@@ -50,7 +50,13 @@ class AiImageViewModel(
                 errorMessage.value = null
                 return@launch
             }
-            loadState.value = AiImageLoadState.Loading
+            // Keep the previous gallery visible while it is refreshed.  The
+            // AI album is preloaded from its home page, so replacing a usable
+            // grid with a full-page spinner on every navigation feels much
+            // slower than the local album and provides no useful feedback.
+            if (repository.images.value.isEmpty()) {
+                loadState.value = AiImageLoadState.Loading
+            }
             errorMessage.value = null
             when (val result = repository.refresh()) {
                 is DeviceCommandResult.Accepted -> loadState.value = AiImageLoadState.Ready

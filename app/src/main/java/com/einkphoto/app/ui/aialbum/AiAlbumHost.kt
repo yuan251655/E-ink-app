@@ -222,10 +222,10 @@ fun AiAlbumHost(
     }
 
     androidx.compose.runtime.LaunchedEffect(route, device.connection, device.currentContent?.mediaId) {
-        if (
-            route in setOf(AiAlbumRoute.Home, AiAlbumRoute.Images) &&
-            device.connection == DeviceConnectionState.Online
-        ) onRefreshAiImages()
+        // Home preloads the AI library.  Do not issue a second list request
+        // merely because the user opens the Images subpage; that request used
+        // to replace a ready gallery with a visible loading loop.
+        if (route == AiAlbumRoute.Home && device.connection == DeviceConnectionState.Online) onRefreshAiImages()
         if (route in setOf(AiAlbumRoute.ModelConfig, AiAlbumRoute.ModelEditor, AiAlbumRoute.ModelSwitch) && device.connection == DeviceConnectionState.Online) onRefreshAiConfig()
         if (route == AiAlbumRoute.Playback && device.connection == DeviceConnectionState.Online) onRefreshAiPlayback()
     }
