@@ -156,7 +156,10 @@ internal fun AiGenerationChatScreen(
                 item {
                     Text("创作记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
                 }
-                items(state.history, key = { it.id }) { item ->
+                // Persisted history is newest-first for efficient updates, but the chat surface
+                // is chronological: the newest entry stays near the composer and earlier work
+                // is reached by scrolling upward.
+                items(state.history.asReversed(), key = { it.id }) { item ->
                     GenerationHistoryCard(
                         item = item,
                         onExpandPreview = { expandedHistoryPreview = it },

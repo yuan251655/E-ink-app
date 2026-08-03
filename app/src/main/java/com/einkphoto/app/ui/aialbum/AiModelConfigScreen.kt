@@ -72,9 +72,11 @@ internal enum class AiServiceMode(val label: String) {
 
 internal data class AiConfigSnapshot(
     val configured: Boolean,
+    val profileId: String,
     val enabled: Boolean,
     val mode: AiServiceMode,
     val provider: String,
+    val profileName: String,
     val serviceUrl: String,
     val chatModel: String,
     val imageModel: String,
@@ -84,9 +86,11 @@ internal data class AiConfigSnapshot(
     companion object {
         fun unconfigured() = AiConfigSnapshot(
             configured = false,
+            profileId = "",
             enabled = false,
             mode = AiServiceMode.Gateway,
             provider = "火山方舟",
+            profileName = "",
             serviceUrl = "",
             chatModel = "",
             imageModel = "",
@@ -99,12 +103,13 @@ internal data class AiConfigSnapshot(
 internal class AiConfigDraft(
     val mode: AiServiceMode,
     val provider: String,
+    val profileName: String,
     val serviceUrl: String,
     val chatModel: String,
     val imageModel: String,
     val newApiKey: String,
 ) {
-    override fun toString(): String = "AiConfigDraft(mode=$mode, provider=$provider, serviceUrl=$serviceUrl, chatModel=$chatModel, imageModel=$imageModel, newApiKey=[REDACTED])"
+    override fun toString(): String = "AiConfigDraft(mode=$mode, provider=$provider, profileName=$profileName, serviceUrl=$serviceUrl, chatModel=$chatModel, imageModel=$imageModel, newApiKey=[REDACTED])"
 }
 
 internal enum class AiFieldState { Valid, Invalid, NotChecked }
@@ -120,7 +125,7 @@ internal fun validateAiConfigDraft(draft: AiConfigDraft, hasSavedCredential: Boo
     val urlValid = draft.serviceUrl.startsWith("https://") || draft.serviceUrl.startsWith("http://")
     val keyValid = draft.mode == AiServiceMode.Gateway || hasSavedCredential || draft.newApiKey.length >= 8
     return listOf(
-        AiFieldCheck("服务商", if (draft.provider.isNotBlank()) AiFieldState.Valid else AiFieldState.Invalid, if (draft.provider.isNotBlank()) "已选择" else "请选择服务商"),
+        AiFieldCheck("名称", if (draft.profileName.isNotBlank()) AiFieldState.Valid else AiFieldState.Invalid, if (draft.profileName.isNotBlank()) "已填写" else "请给此模型起一个名称"),
         AiFieldCheck("服务地址", if (urlValid) AiFieldState.Valid else AiFieldState.Invalid, if (urlValid) "格式正确" else "请输入以 http:// 或 https:// 开头的地址"),
         AiFieldCheck("对话模型", if (draft.chatModel.isNotBlank()) AiFieldState.Valid else AiFieldState.Invalid, if (draft.chatModel.isNotBlank()) "已填写" else "请填写对话模型或接入点 ID"),
         AiFieldCheck("生图模型", if (draft.imageModel.isNotBlank()) AiFieldState.Valid else AiFieldState.Invalid, if (draft.imageModel.isNotBlank()) "已填写" else "请填写生图模型或接入点 ID"),
@@ -139,7 +144,7 @@ internal fun AiModelConfigScreen(
     onBack: () -> Unit,
     newApiKey: String,
     onNewApiKeyChange: (String) -> Unit,
-    onSave: (endpoint: String, imageModel: String, apiKey: String, testRequested: Boolean) -> Unit,
+    onSave: (name: String, endpoint: String, imageModel: String, apiKey: String, testRequested: Boolean) -> Unit,
     onTestSaved: () -> Unit = {},
     onDelete: () -> Unit,
     operationMessage: String?,
@@ -151,17 +156,19 @@ internal fun AiModelConfigScreen(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
+    var profileName by rememberSaveable { mutableStateOf(snapshot.profileName) }
     var serviceUrl by rememberSaveable { mutableStateOf(snapshot.serviceUrl) }
     var imageModel by rememberSaveable { mutableStateOf(snapshot.imageModel) }
     var keyVisible by remember { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
     var showBillableConfirmation by rememberSaveable { mutableStateOf(false) }
     var localMessage by rememberSaveable { mutableStateOf<String?>(null) }
-    val valid = serviceUrl.startsWith("https://") && imageModel.isNotBlank() &&
+    val valid = profileName.isNotBlank() && serviceUrl.startsWith("https://") && imageModel.isNotBlank() &&
         (snapshot.configured || newApiKey.length >= 8)
     val savedFieldsUnchanged = snapshot.configured && newApiKey.isBlank() &&
-        serviceUrl.trim() == snapshot.serviceUrl && imageModel.trim() == snapshot.imageModel
-    LaunchedEffect(snapshot.serviceUrl, snapshot.imageModel) {
+        profileName.trim() == snapshot.profileName && serviceUrl.trim() == snapshot.serviceUrl && imageModel.trim() == snapshot.imageModel
+    LaunchedEffect(snapshot.profileName, snapshot.serviceUrl, snapshot.imageModel) {
+        if (profileName.isBlank()) profileName = snapshot.profileName
         if (serviceUrl.isBlank()) serviceUrl = snapshot.serviceUrl
         if (imageModel.isBlank()) imageModel = snapshot.imageModel
     }
@@ -180,7 +187,7 @@ internal fun AiModelConfigScreen(
             onDismissRequest = { showBillableConfirmation = false },
             title = { Text("确认测试模型？") },
             text = { Text("测试会向模型服务发送一次最小生成请求，可能产生少量服务费用；结果不会下载到相框、不会写入 TF，也不会刷新屏幕。") },
-            confirmButton = { TextButton(onClick = { showBillableConfirmation = false; if (savedFieldsUnchanged) onTestSaved() else onSave(serviceUrl.trim(), imageModel.trim(), newApiKey, true) }) { Text(if (savedFieldsUnchanged) "测试模型" else "保存并测试") } },
+            confirmButton = { TextButton(onClick = { showBillableConfirmation = false; if (savedFieldsUnchanged) onTestSaved() else onSave(profileName.trim(), serviceUrl.trim(), imageModel.trim(), newApiKey, true) }) { Text(if (savedFieldsUnchanged) "测试模型" else "保存并测试") } },
             dismissButton = { TextButton(onClick = { showBillableConfirmation = false }) { Text("取消") } },
         )
     }
@@ -195,12 +202,13 @@ internal fun AiModelConfigScreen(
                 item {
                     Card(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(if (snapshot.configured) "模型已配置" else "尚未配置模型", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                            Text(if (snapshot.configured) "${snapshot.profileName.ifBlank { "当前模型" }}已配置" else "尚未配置模型", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                             Text(if (snapshot.configured) "已保存 Key：${maskApiKeySuffix(snapshot.apiKeySuffix) ?: "已隐藏"}" else "填写官方配置文件中的三个字段即可。", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
                 item {
+                    OutlinedTextField(value = profileName, onValueChange = { profileName = it; localMessage = null }, label = { Text("模型名称") }, supportingText = { Text("例如：我的 Seedream 5.0 Pro；用于模型列表识别") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = serviceUrl, onValueChange = { serviceUrl = it; localMessage = null }, label = { Text("图片接口地址") }, supportingText = { Text("对应官方 config.txt 的 ai_url，仅支持 HTTPS") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = imageModel, onValueChange = { imageModel = it; localMessage = null }, label = { Text("图片模型 ID") }, supportingText = { Text("对应官方 config.txt 的 ai_model") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(
@@ -220,10 +228,10 @@ internal fun AiModelConfigScreen(
                         OutlinedCard(Modifier.fillMaxWidth()) { Text(message, Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         Spacer(Modifier.size(8.dp))
                     }
-                    Button(onClick = { if (valid) showBillableConfirmation = true else localMessage = "请填写 HTTPS 接口地址、模型 ID 和有效 API Key" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                    Button(onClick = { if (valid) showBillableConfirmation = true else localMessage = "请填写模型名称、HTTPS 接口地址、模型 ID 和有效 API Key" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
                         Icon(Icons.Outlined.CheckCircle, null); Spacer(Modifier.size(8.dp)); Text(if (saving) "正在测试…" else if (savedFieldsUnchanged) "测试已保存模型" else "保存并测试")
                     }
-                    OutlinedButton(onClick = { if (valid) onSave(serviceUrl.trim(), imageModel.trim(), newApiKey, false) else localMessage = "请先补全三个配置项" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("仅保存配置") }
+                    OutlinedButton(onClick = { if (valid) onSave(profileName.trim(), serviceUrl.trim(), imageModel.trim(), newApiKey, false) else localMessage = "请先补全模型名称、接口、模型 ID 与 Key" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("保存并设为当前模型") }
                     TextButton(onClick = { showDeleteConfirmation = true }, enabled = snapshot.configured && !saving, modifier = Modifier.fillMaxWidth()) { Text("清除配置", color = MaterialTheme.colorScheme.error) }
                 }
             }
@@ -277,6 +285,7 @@ private fun LegacyAiModelConfigScreen(
     fun currentDraft() = AiConfigDraft(
         mode = selectedMode,
         provider = snapshot.provider,
+        profileName = snapshot.profileName,
         serviceUrl = serviceUrl.trim(),
         chatModel = chatModel.trim(),
         imageModel = imageModel.trim(),
@@ -598,7 +607,7 @@ private fun ValidationLine(check: AiFieldCheck) {
 private fun AiModelConfigEmptyPreview() = EInkPhotoTheme(darkTheme = false) {
     AiModelConfigScreen(
         snapshot = AiConfigSnapshot.unconfigured(), onBack = {}, newApiKey = "", onNewApiKeyChange = {},
-        onSave = { _, _, _, _ -> }, onDelete = {}, operationMessage = null, saving = false,
+        onSave = { _, _, _, _, _ -> }, onDelete = {}, operationMessage = null, saving = false,
         tutorialCurrentStep = 0, tutorialCompletedSteps = 0, onOpenTutorial = {}, contentPadding = PaddingValues(),
     )
 }
@@ -609,9 +618,11 @@ private fun AiModelConfigConfiguredPreview() = EInkPhotoTheme(darkTheme = true) 
     AiModelConfigScreen(
         snapshot = AiConfigSnapshot(
             configured = true,
+            profileId = "seedream-main",
             enabled = true,
             mode = AiServiceMode.Direct,
             provider = "火山方舟",
+            profileName = "我的 Seedream",
             serviceUrl = "https://example.invalid/api",
             chatModel = "doubao-chat-endpoint",
             imageModel = "seedream-endpoint",
@@ -621,7 +632,7 @@ private fun AiModelConfigConfiguredPreview() = EInkPhotoTheme(darkTheme = true) 
         onBack = {},
         newApiKey = "",
         onNewApiKeyChange = {},
-        onSave = { _, _, _, _ -> },
+        onSave = { _, _, _, _, _ -> },
         onDelete = {},
         operationMessage = null,
         saving = false,
@@ -637,7 +648,7 @@ private fun AiModelConfigConfiguredPreview() = EInkPhotoTheme(darkTheme = true) 
 private fun AiModelConfigLandscapePreview() = EInkPhotoTheme(darkTheme = false) {
     AiModelConfigScreen(
         snapshot = AiConfigSnapshot.unconfigured(), onBack = {}, newApiKey = "", onNewApiKeyChange = {},
-        onSave = { _, _, _, _ -> }, onDelete = {}, operationMessage = null, saving = false,
+        onSave = { _, _, _, _, _ -> }, onDelete = {}, operationMessage = null, saving = false,
         tutorialCurrentStep = 1, tutorialCompletedSteps = 1, onOpenTutorial = {}, contentPadding = PaddingValues(),
     )
 }

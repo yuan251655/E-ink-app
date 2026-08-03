@@ -8,6 +8,8 @@ import kotlinx.coroutines.launch
 
 data class AiConfigUiState(
     val configuration: AiProviderConfiguration = AiProviderConfiguration(),
+    val profiles: List<AiModelProfile> = emptyList(),
+    val profilesAvailable: Boolean = false,
     val loading: Boolean = false,
     val saving: Boolean = false,
     val message: String? = null,
@@ -21,37 +23,61 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
     fun refresh() = viewModelScope.launch {
         mutableState.value = mutableState.value.copy(loading = true, message = null)
         repository.read().onSuccess { config ->
-            mutableState.value = mutableState.value.copy(configuration = config, loading = false)
+            repository.readProfiles().onSuccess { profiles ->
+                val active = profiles.firstOrNull { it.active }
+                mutableState.value = mutableState.value.copy(
+                    configuration = config.copy(
+                        profileId = active?.id ?: config.profileId,
+                        profileName = active?.name ?: config.profileName,
+                    ),
+                    profiles = profiles,
+                    profilesAvailable = true,
+                    loading = false,
+                )
+            }.onFailure {
+                // The deployed device may temporarily be on an earlier firmware.
+                // Keep the existing single-profile configuration usable instead
+                // of presenting an empty model screen as a successful list.
+                mutableState.value = mutableState.value.copy(configuration = config, profilesAvailable = false, loading = false)
+            }
         }.onFailure {
             mutableState.value = mutableState.value.copy(loading = false, message = "无法读取模型配置，请确认相框已连接")
         }
     }
 
-    fun save(endpoint: String, imageModel: String, apiKey: String) = viewModelScope.launch {
-        if (!endpoint.startsWith("https://") || imageModel.isBlank() || apiKey.length < 8) {
-            mutableState.value = mutableState.value.copy(message = "请填写 HTTPS 服务地址、生图模型和有效的 API Key")
+    fun save(existingProfileId: String?, name: String, endpoint: String, imageModel: String, apiKey: String) = viewModelScope.launch {
+        if (name.isBlank() || !endpoint.startsWith("https://") || imageModel.isBlank() || apiKey.length < 8) {
+            mutableState.value = mutableState.value.copy(message = "请填写名称、HTTPS 服务地址、生图模型和有效的 API Key")
             return@launch
         }
         mutableState.value = mutableState.value.copy(saving = true, message = null, testResult = null)
-        repository.save(endpoint, imageModel, apiKey).onSuccess { config ->
-            mutableState.value = mutableState.value.copy(
-                configuration = config,
-                saving = false,
-                message = "配置已安全保存，Key 仅显示尾四位。首次生成图片时将验证网络和鉴权，不会额外产生测试费用。",
-            )
+        val profileId = existingProfileId.orEmpty().ifBlank { "model-${System.currentTimeMillis()}" }
+        repository.saveProfile(profileId, name.trim(), endpoint, imageModel, apiKey).onSuccess { profile ->
+            repository.activateProfile(profile.id).onSuccess {
+                refreshAfterProfileChange("“${profile.name}”已保存并设为当前模型。Key 仅显示尾四位。")
+            }.onFailure {
+                mutableState.value = mutableState.value.copy(saving = false, message = "模型已保存，但暂时无法设为当前模型")
+            }
         }.onFailure {
             mutableState.value = mutableState.value.copy(saving = false, message = "保存失败，请检查相框连接和填写内容")
         }
     }
 
-    fun saveAndTest(endpoint: String, imageModel: String, apiKey: String) = viewModelScope.launch {
-        if (!endpoint.startsWith("https://") || imageModel.isBlank() || (apiKey.isNotEmpty() && apiKey.length < 8)) {
-            mutableState.value = mutableState.value.copy(message = "请填写 HTTPS 服务地址、生图模型和有效的 API Key")
+    fun saveAndTest(existingProfileId: String?, name: String, endpoint: String, imageModel: String, apiKey: String) = viewModelScope.launch {
+        if (name.isBlank() || !endpoint.startsWith("https://") || imageModel.isBlank() || (apiKey.isNotEmpty() && apiKey.length < 8)) {
+            mutableState.value = mutableState.value.copy(message = "请填写名称、HTTPS 服务地址、生图模型和有效的 API Key")
             return@launch
         }
         mutableState.value = mutableState.value.copy(saving = true, message = "正在保存并测试模型…", testResult = null)
-        repository.save(endpoint, imageModel, apiKey).onFailure {
+        val profileId = existingProfileId.orEmpty().ifBlank { "model-${System.currentTimeMillis()}" }
+        val saved = repository.saveProfile(profileId, name.trim(), endpoint, imageModel, apiKey)
+        saved.onFailure {
             mutableState.value = mutableState.value.copy(saving = false, message = "保存失败，请检查相框连接和填写内容")
+            return@launch
+        }
+        val profile = saved.getOrThrow()
+        repository.activateProfile(profile.id).onFailure {
+            mutableState.value = mutableState.value.copy(saving = false, message = "模型已保存，但无法设为当前模型")
             return@launch
         }
         repository.testConnection(allowBillableTest = true).onSuccess { test ->
@@ -61,7 +87,12 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
                 else -> testMessage(test.code, test.providerMessage)
             }
             repository.read().onSuccess { config ->
-                mutableState.value = mutableState.value.copy(configuration = config, saving = false, message = message, testResult = test)
+                repository.readProfiles().onSuccess { profiles ->
+                    val active = profiles.firstOrNull { it.active }
+                    mutableState.value = mutableState.value.copy(configuration = config.copy(profileId = active?.id.orEmpty(), profileName = active?.name.orEmpty()), profiles = profiles, profilesAvailable = true, saving = false, message = message, testResult = test)
+                }.onFailure {
+                    mutableState.value = mutableState.value.copy(configuration = config, saving = false, message = message, testResult = test)
+                }
             }.onFailure {
                 mutableState.value = mutableState.value.copy(saving = false, message = message, testResult = test)
             }
@@ -102,6 +133,33 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
             mutableState.value = AiConfigUiState(message = "AI 模型配置已删除")
         }.onFailure {
             mutableState.value = mutableState.value.copy(saving = false, message = "删除失败，请稍后重试")
+        }
+    }
+
+    fun activateProfile(id: String) = viewModelScope.launch {
+        mutableState.value = mutableState.value.copy(saving = true, message = "正在切换模型…", testResult = null)
+        repository.activateProfile(id).onSuccess { refreshAfterProfileChange("当前模型已切换") }
+            .onFailure { mutableState.value = mutableState.value.copy(saving = false, message = "切换失败，请确认相框连接") }
+    }
+
+    fun deleteActiveProfile() = viewModelScope.launch {
+        val profile = mutableState.value.profiles.firstOrNull { it.active }
+            ?: return@launch run { mutableState.value = mutableState.value.copy(message = "没有可删除的已保存模型") }
+        mutableState.value = mutableState.value.copy(saving = true, message = null)
+        repository.deleteProfile(profile.id).onSuccess { refreshAfterProfileChange("“${profile.name}”已删除") }
+            .onFailure { mutableState.value = mutableState.value.copy(saving = false, message = "删除失败，请稍后重试") }
+    }
+
+    private fun refreshAfterProfileChange(message: String) = viewModelScope.launch {
+        repository.read().onSuccess { config ->
+            repository.readProfiles().onSuccess { profiles ->
+                val active = profiles.firstOrNull { it.active }
+                mutableState.value = mutableState.value.copy(configuration = config.copy(profileId = active?.id.orEmpty(), profileName = active?.name.orEmpty()), profiles = profiles, profilesAvailable = true, saving = false, message = message)
+            }.onFailure {
+                mutableState.value = mutableState.value.copy(configuration = config, saving = false, message = message)
+            }
+        }.onFailure {
+            mutableState.value = mutableState.value.copy(saving = false, message = "操作已提交，但暂时无法刷新模型列表")
         }
     }
 }

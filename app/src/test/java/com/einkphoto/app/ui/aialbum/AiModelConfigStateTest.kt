@@ -29,7 +29,7 @@ class AiModelConfigStateTest {
 
     @Test fun invalidUrlAndMissingModelsAreReportedSeparately() {
         val checks = validateAiConfigDraft(
-            AiConfigDraft(AiServiceMode.Gateway, "火山方舟", "invalid", "", "", ""),
+            AiConfigDraft(AiServiceMode.Gateway, "火山方舟", "测试模型", "invalid", "", "", ""),
             hasSavedCredential = false,
         )
         assertEquals(setOf("服务地址", "对话模型", "生图模型"), checks.filter { it.state == AiFieldState.Invalid }.map { it.label }.toSet())
@@ -39,10 +39,11 @@ class AiModelConfigStateTest {
         assertEquals(AiAlbumRoute.Home, aiBackDestination(AiAlbumRoute.ModelConfig))
     }
 
-    @Test fun tutorialAlwaysReturnsToConfigBeforeConfigReturnsHome() {
+    @Test fun tutorialReturnsToEditorBeforeConfigurationReturnsHome() {
         val fromTutorial = aiBackDestination(AiAlbumRoute.ModelTutorial)
-        assertEquals(AiAlbumRoute.ModelConfig, fromTutorial)
-        assertEquals(AiAlbumRoute.Home, aiBackDestination(fromTutorial))
+        assertEquals(AiAlbumRoute.ModelEditor, fromTutorial)
+        assertEquals(AiAlbumRoute.ModelConfig, aiBackDestination(fromTutorial))
+        assertEquals(AiAlbumRoute.Home, aiBackDestination(AiAlbumRoute.ModelConfig))
     }
 
     @Test fun tutorialProgressIsBoundedAndStepsNavigateSafely() {
@@ -74,6 +75,7 @@ class AiModelConfigStateTest {
     private fun draft(mode: AiServiceMode, newKey: String) = AiConfigDraft(
         mode = mode,
         provider = "火山方舟",
+        profileName = "测试模型",
         serviceUrl = "https://example.invalid/api",
         chatModel = "chat-endpoint",
         imageModel = "image-endpoint",

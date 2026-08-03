@@ -229,12 +229,13 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onSaveAiPlayback = aiPlaybackViewModel::save,
                 aiConfigUiState = aiConfigState,
                 onRefreshAiConfig = aiConfigViewModel::refresh,
-                onSaveAiConfig = { endpoint, model, key, testRequested ->
-                    if (testRequested) aiConfigViewModel.saveAndTest(endpoint, model, key)
-                    else aiConfigViewModel.save(endpoint, model, key)
+                onSaveAiConfig = { profileId, name, endpoint, model, key, testRequested ->
+                    if (testRequested) aiConfigViewModel.saveAndTest(profileId, name, endpoint, model, key)
+                    else aiConfigViewModel.save(profileId, name, endpoint, model, key)
                 },
                 onTestSavedAiConfig = aiConfigViewModel::testSaved,
-                onDeleteAiConfig = aiConfigViewModel::clear,
+                onDeleteAiConfig = aiConfigViewModel::deleteActiveProfile,
+                onActivateAiModel = aiConfigViewModel::activateProfile,
                 aiGenerationUiState = aiGenerationState,
                 onGenerateAiImage = aiGenerationViewModel::generate,
                 onConfirmAiSave = aiGenerationViewModel::confirmSave,

@@ -77,6 +77,7 @@ import com.einkphoto.app.feature.mode.ModeSwitchUiState
 import com.einkphoto.app.feature.aialbum.AiImageLoadState
 import com.einkphoto.app.feature.aialbum.AiImageUiState
 import com.einkphoto.app.feature.aialbum.AiConfigUiState
+import com.einkphoto.app.feature.aialbum.AiModelProfile
 import com.einkphoto.app.feature.aialbum.AiGenerationUiState
 import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
 import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
@@ -100,13 +101,16 @@ internal enum class AiAlbumRoute(val title: String, val description: String) {
     ImageDetail("图片详情", "查看 AI 图片信息与可用操作。"),
     Create("创建 AI 图片", "生图任务将在模型配置与设备接口接入后开放。"),
     Playback("AI 轮播设置", "AI 轮播拥有独立的开关、间隔和播放顺序。"),
-    ModelConfig("AI 模型配置", "这里将提供模型配置教程、密钥保存与连通性测试。"),
+    ModelConfig("模型管理", ""),
+    ModelEditor("模型配置", ""),
+    ModelSwitch("切换模型", ""),
     ModelTutorial(MODEL_TUTORIAL_TITLE, "按照七个步骤完成模型服务配置。"),
     Usage("Token 与计费", "这里将区分实际用量、估算费用与官方账户余额。"),
 }
 
 internal fun aiBackDestination(current: AiAlbumRoute): AiAlbumRoute = when (current) {
-    AiAlbumRoute.ModelTutorial -> AiAlbumRoute.ModelConfig
+    AiAlbumRoute.ModelTutorial -> AiAlbumRoute.ModelEditor
+    AiAlbumRoute.ModelEditor, AiAlbumRoute.ModelSwitch -> AiAlbumRoute.ModelConfig
     AiAlbumRoute.ModelConfig -> AiAlbumRoute.Home
     AiAlbumRoute.ImageDetail -> AiAlbumRoute.Images
     AiAlbumRoute.Images -> AiAlbumRoute.Home
@@ -163,9 +167,10 @@ fun AiAlbumHost(
     onSaveAiPlayback: (PlayMode, PlayOrder, Int) -> Unit = { _, _, _ -> },
     aiConfigUiState: AiConfigUiState = AiConfigUiState(),
     onRefreshAiConfig: () -> Unit = {},
-    onSaveAiConfig: (String, String, String, Boolean) -> Unit = { _, _, _, _ -> },
+    onSaveAiConfig: (String?, String, String, String, String, Boolean) -> Unit = { _, _, _, _, _, _ -> },
     onTestSavedAiConfig: () -> Unit = {},
     onDeleteAiConfig: () -> Unit = {},
+    onActivateAiModel: (String) -> Unit = {},
     aiGenerationUiState: AiGenerationUiState = AiGenerationUiState(),
     onGenerateAiImage: (String) -> Unit = {},
     onConfirmAiSave: () -> Unit = {},
@@ -179,6 +184,7 @@ fun AiAlbumHost(
     var tutorialCurrentStep by rememberSaveable { mutableStateOf(0) }
     var tutorialCompletedSteps by rememberSaveable { mutableStateOf(emptyList<Int>()) }
     var selectedAiImageId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingModelId by rememberSaveable { mutableStateOf<String?>(null) }
     // Secret is intentionally ordinary in-memory state: Config <-> Tutorial keeps it, but SavedState,
     // rotation/process recreation and a disposed AI host cannot restore it.
     var pendingApiKey by remember { mutableStateOf("") }
@@ -218,7 +224,7 @@ fun AiAlbumHost(
             route in setOf(AiAlbumRoute.Home, AiAlbumRoute.Images) &&
             device.connection == DeviceConnectionState.Online
         ) onRefreshAiImages()
-        if (route == AiAlbumRoute.ModelConfig && device.connection == DeviceConnectionState.Online) onRefreshAiConfig()
+        if (route in setOf(AiAlbumRoute.ModelConfig, AiAlbumRoute.ModelEditor, AiAlbumRoute.ModelSwitch) && device.connection == DeviceConnectionState.Online) onRefreshAiConfig()
         if (route == AiAlbumRoute.Playback && device.connection == DeviceConnectionState.Online) onRefreshAiPlayback()
     }
     BackHandler(enabled = route != AiAlbumRoute.Home, onBack = back)
@@ -274,23 +280,56 @@ fun AiAlbumHost(
             modifier = modifier,
         )
     } else if (route == AiAlbumRoute.ModelConfig) {
-        stateHolder.SaveableStateProvider(AiAlbumRoute.ModelConfig.name) {
+        AiModelManagerScreen(
+            configured = aiConfigUiState.configuration.configured,
+            activeName = aiConfigUiState.configuration.profileName.ifBlank { aiConfigUiState.configuration.imageModel },
+            profiles = aiConfigUiState.profiles,
+            profilesAvailable = aiConfigUiState.profilesAvailable,
+            onEdit = { editingModelId = aiConfigUiState.configuration.profileId.takeIf { it.isNotBlank() }; routeName = AiAlbumRoute.ModelEditor.name },
+            onCreate = { editingModelId = null; pendingApiKey = ""; routeName = AiAlbumRoute.ModelEditor.name },
+            onSwitch = { routeName = AiAlbumRoute.ModelSwitch.name },
+            onBack = back,
+            contentPadding = contentPadding,
+            modifier = modifier,
+        )
+    } else if (route == AiAlbumRoute.ModelEditor) {
+        val profile = aiConfigUiState.profiles.firstOrNull { it.id == editingModelId }
+        val editorSnapshot = when {
+            profile != null -> AiConfigSnapshot(
+                configured = true,
+                profileId = profile.id,
+                enabled = profile.active,
+                mode = AiServiceMode.Direct,
+                provider = "火山方舟",
+                profileName = profile.name,
+                serviceUrl = profile.endpoint,
+                chatModel = "文本推理模型将在图片生成服务中使用",
+                imageModel = profile.imageModel,
+                apiKeySuffix = profile.keyLast4,
+                lastVerifiedLabel = null,
+            )
+            editingModelId != null && aiConfigUiState.configuration.configured -> AiConfigSnapshot(
+                configured = true,
+                profileId = aiConfigUiState.configuration.profileId,
+                enabled = true,
+                mode = AiServiceMode.Direct,
+                provider = "火山方舟",
+                profileName = aiConfigUiState.configuration.profileName.ifBlank { aiConfigUiState.configuration.imageModel },
+                serviceUrl = aiConfigUiState.configuration.endpoint,
+                chatModel = "文本推理模型将在图片生成服务中使用",
+                imageModel = aiConfigUiState.configuration.imageModel,
+                apiKeySuffix = aiConfigUiState.configuration.keyLast4,
+                lastVerifiedLabel = null,
+            )
+            else -> AiConfigSnapshot.unconfigured()
+        }
+        stateHolder.SaveableStateProvider("${AiAlbumRoute.ModelEditor.name}-${editingModelId ?: "new"}") {
             AiModelConfigScreen(
-                snapshot = AiConfigSnapshot(
-                    configured = aiConfigUiState.configuration.configured,
-                    enabled = aiConfigUiState.configuration.configured,
-                    mode = AiServiceMode.Direct,
-                    provider = "火山方舟",
-                    serviceUrl = aiConfigUiState.configuration.endpoint,
-                    chatModel = "文本推理模型将在图片生成服务中使用",
-                    imageModel = aiConfigUiState.configuration.imageModel,
-                    apiKeySuffix = aiConfigUiState.configuration.keyLast4,
-                    lastVerifiedLabel = null,
-                ),
+                snapshot = editorSnapshot,
                 onBack = back,
                 newApiKey = pendingApiKey,
                 onNewApiKeyChange = { pendingApiKey = it },
-                onSave = onSaveAiConfig,
+                onSave = { name, endpoint, model, key, testRequested -> onSaveAiConfig(editorSnapshot.profileId.takeIf { it.isNotBlank() }, name, endpoint, model, key, testRequested) },
                 onTestSaved = onTestSavedAiConfig,
                 onDelete = onDeleteAiConfig,
                 operationMessage = aiConfigUiState.message,
@@ -303,6 +342,17 @@ fun AiAlbumHost(
                 modifier = modifier,
             )
         }
+    } else if (route == AiAlbumRoute.ModelSwitch) {
+        AiModelSwitchScreen(
+            profiles = aiConfigUiState.profiles,
+            profilesAvailable = aiConfigUiState.profilesAvailable,
+            saving = aiConfigUiState.saving,
+            message = aiConfigUiState.message,
+            onActivate = onActivateAiModel,
+            onBack = back,
+            contentPadding = contentPadding,
+            modifier = modifier,
+        )
     } else if (route == AiAlbumRoute.Create) {
         AiGenerationChatScreen(
             state = aiGenerationUiState,
@@ -417,6 +467,42 @@ private fun AiAlbumHomeScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AiModelManagerScreen(configured: Boolean, activeName: String, profiles: List<AiModelProfile>, profilesAvailable: Boolean, onEdit: () -> Unit, onCreate: () -> Unit, onSwitch: () -> Unit, onBack: () -> Unit, contentPadding: PaddingValues, modifier: Modifier) {
+    Column(modifier.fillMaxSize().padding(contentPadding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回 AI 相册") }; Text("模型管理", style = MaterialTheme.typography.titleLarge) }
+        if (configured) Text("当前：$activeName", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+        Card(modifier = Modifier.fillMaxWidth(), onClick = onEdit) { Column(Modifier.padding(20.dp)) { Text("编辑当前模型", style = MaterialTheme.typography.titleMedium); Text("修改当前模型的名称、服务和 Key", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+        Card(modifier = Modifier.fillMaxWidth(), onClick = onCreate) { Column(Modifier.padding(20.dp)) { Text("新增模型", style = MaterialTheme.typography.titleMedium); Text("为另一套服务配置单独保存名称", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+        Card(modifier = Modifier.fillMaxWidth(), onClick = onSwitch) { Column(Modifier.padding(20.dp)) { Text("切换模型", style = MaterialTheme.typography.titleMedium); Text(if (profilesAvailable) "已保存 ${profiles.size} 个模型" else "读取已保存模型后可切换", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall) } }
+    }
+}
+
+@Composable
+private fun AiModelSwitchScreen(profiles: List<AiModelProfile>, profilesAvailable: Boolean, saving: Boolean, message: String?, onActivate: (String) -> Unit, onBack: () -> Unit, contentPadding: PaddingValues, modifier: Modifier) {
+    Column(modifier.fillMaxSize().padding(contentPadding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回模型管理") }; Text("切换模型", style = MaterialTheme.typography.titleLarge) }
+        if (!profilesAvailable) {
+            Card(Modifier.fillMaxWidth()) { Text("暂时无法读取已保存模型。请确认相框已更新并保持连接。", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else if (profiles.isEmpty()) {
+            Card(Modifier.fillMaxWidth()) { Text("还没有已保存模型。请先返回新增一个模型。", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        } else {
+            profiles.forEach { profile ->
+                Card(modifier = Modifier.fillMaxWidth(), onClick = { if (!profile.active && !saving) onActivate(profile.id) }) {
+                    Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.weight(1f)) {
+                            Text(profile.name, style = MaterialTheme.typography.titleMedium)
+                            Text(profile.imageModel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        if (profile.active) Text("当前使用", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge) else Text("切换", color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
+        message?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
     }
 }
 
