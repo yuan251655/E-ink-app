@@ -10,6 +10,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
 import java.net.HttpURLConnection
+import java.net.Proxy
 import java.net.URL
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.CancellationException
@@ -30,7 +31,7 @@ class DevelopmentApHttpClient {
             for (endpoint in DeviceEndpointConfig.endpointCandidates) {
                 for (attempt in 0..2) {
                     try {
-                val connection = (URL(endpoint + path).openConnection() as HttpURLConnection).apply {
+                val connection = (URL(endpoint + path).openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                     // The ESP may take several seconds to re-open its single HTTP slot after a
                     // TF transaction. Three seconds turned a valid, late 200 response into a
                     // false "offline" result before batch upload could even start.
@@ -70,7 +71,7 @@ class DevelopmentApHttpClient {
             repeat(2) { attempt ->
                 for (endpoint in DeviceEndpointConfig.endpointCandidates) {
                     try {
-                    val connection = (URL(endpoint + "/api/v1/media/$mediaId/preview").openConnection() as HttpURLConnection).apply {
+                    val connection = (URL(endpoint + "/api/v1/media/$mediaId/preview").openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                         requestMethod = "GET"; connectTimeout = 5_000; readTimeout = 15_000
                         setRequestProperty("Connection", "close")
                     }
@@ -131,7 +132,7 @@ class DevelopmentApHttpClient {
             val contentLength = openingBytes.size.toLong() + metadata.size + imageHeaderBytes.size + frameFile.length() + closingBytes.size
             require(contentLength <= Int.MAX_VALUE) { "upload is too large" }
 
-            val connection = (URL(baseUrl + "/api/v1/media/upload").openConnection() as HttpURLConnection).apply {
+            val connection = (URL(baseUrl + "/api/v1/media/upload").openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 5_000
@@ -194,7 +195,7 @@ class DevelopmentApHttpClient {
             val binHeader = multipartHeader(boundary, "image_bin", "image.bin", "application/octet-stream")
             val closing = "\r\n--$boundary--\r\n".toByteArray(StandardCharsets.UTF_8)
             val contentLength = metadataHeader.size.toLong() + metadata.size + 2L + binHeader.size + request.imageBinSizeBytes + closing.size
-            val connection = (URL(baseUrl + "/api/v1/media/upload").openConnection() as HttpURLConnection).apply {
+            val connection = (URL(baseUrl + "/api/v1/media/upload").openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                 requestMethod = "POST"
                 doOutput = true
                 connectTimeout = 8_000
@@ -232,33 +233,52 @@ class DevelopmentApHttpClient {
             // firmware's 180-second window; a generic 20-second HTTP timeout
             // would make the App report a false failure first.
             val readTimeoutMs = if (path == "/api/v1/ai/config/test") 195_000 else 20_000
-            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                doOutput = true
-                connectTimeout = 5_000
-                readTimeout = readTimeoutMs
-                setRequestProperty("Content-Type", "application/json; charset=utf-8")
-                setRequestProperty("Connection", "close")
-                setFixedLengthStreamingMode(payload.size)
+            var lastError: Throwable? = null
+            for (endpoint in DeviceEndpointConfig.endpointCandidates) {
+                try {
+                    val connection = (URL(endpoint + path).openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
+                        requestMethod = "POST"
+                        doOutput = true
+                        connectTimeout = 5_000
+                        readTimeout = readTimeoutMs
+                        setRequestProperty("Content-Type", "application/json; charset=utf-8")
+                        setRequestProperty("Connection", "close")
+                        setFixedLengthStreamingMode(payload.size)
+                    }
+                    try {
+                        connection.outputStream.use { it.write(payload) }
+                        val status = connection.responseCode
+                        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                            ?: throw DeviceResponseException("HTTP $status")
+                        val root = JSONObject(stream.bufferedReader().use { it.readText() })
+                        if (!root.optBoolean("ok", false)) throw DeviceResponseException(root.optString("code", "request_failed"))
+                        // Never log request JSON: it can include prompt text or credentials.
+                        Log.i("EInkDeviceHttp", "POST $path endpoint=$endpoint HTTP=$status")
+                        DeviceEndpointConfig.markEndpointReachable(endpoint)
+                        return@runCatching root
+                    } finally {
+                        connection.disconnect()
+                    }
+                } catch (error: DeviceResponseException) {
+                    // The device answered authoritatively. Trying a second endpoint could repeat
+                    // a state-changing request, so return this safe error code immediately.
+                    throw error
+                } catch (error: Throwable) {
+                    lastError = error
+                    Log.w("EInkDeviceHttp", "POST $path endpoint=$endpoint failed", error)
+                }
             }
-            try {
-                connection.outputStream.use { it.write(payload) }
-                val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
-                    ?: error("HTTP ${connection.responseCode}")
-                val root = JSONObject(stream.bufferedReader().use { it.readText() })
-                if (!root.optBoolean("ok", false)) error(root.optString("code", "request_failed"))
-                root
-            } finally {
-                connection.disconnect()
-            }
+            throw requireNotNull(lastError)
         }
     } }
+
+    private class DeviceResponseException(message: String) : IllegalStateException(message)
 
     /** PUT a small versioned product-API request. Credentials and conversation text are never logged. */
     suspend fun putJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
-            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(baseUrl + path).openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                 requestMethod = "PUT"
                 doOutput = true
                 connectTimeout = 5_000
@@ -283,7 +303,7 @@ class DevelopmentApHttpClient {
     suspend fun deleteJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
-            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(baseUrl + path).openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                 requestMethod = "DELETE"
                 doOutput = true
                 connectTimeout = 5_000
@@ -314,7 +334,7 @@ class DevelopmentApHttpClient {
         val temporary = File(parent, "${destination.name}.part")
         temporary.delete()
         try {
-            val connection = (URL(baseUrl + path).openConnection() as HttpURLConnection).apply {
+            val connection = (URL(baseUrl + path).openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                 requestMethod = "GET"
                 setRequestProperty("Connection", "close")
                 connectTimeout = 5_000

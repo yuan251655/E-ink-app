@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.Send
@@ -40,6 +41,7 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -49,6 +51,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -58,6 +61,7 @@ import androidx.compose.ui.window.DialogProperties
 import com.einkphoto.app.feature.aialbum.AiGenerationPhase
 import com.einkphoto.app.feature.aialbum.AiGenerationPreview
 import com.einkphoto.app.feature.aialbum.AiGenerationHistoryItem
+import com.einkphoto.app.feature.aialbum.AiGenerationLastTaskDiagnostic
 import com.einkphoto.app.feature.aialbum.AiGenerationSaveStatus
 import com.einkphoto.app.feature.aialbum.AiGenerationUiState
 import com.einkphoto.app.ui.components.pressFeedbackClickable
@@ -78,6 +82,8 @@ internal fun AiGenerationChatScreen(
     onConfirmSave: () -> Unit,
     onOpenAiImages: () -> Unit,
     onContinueHistory: (String) -> Unit = {},
+    onRetrySubmission: (String) -> Unit = {},
+    onCancelWaitingSubmission: (String) -> Unit = {},
     onDiscardHistory: (String) -> Unit = {},
     onBack: () -> Unit,
     contentPadding: PaddingValues,
@@ -87,11 +93,20 @@ internal fun AiGenerationChatScreen(
     var expandedPreview by rememberSaveable { mutableStateOf(false) }
     var expandedHistoryPreview by rememberSaveable { mutableStateOf<AiGenerationPreview?>(null) }
     var composerExpanded by rememberSaveable { mutableStateOf(false) }
+    val listState = rememberLazyListState()
+    val focusManager = LocalFocusManager.current
     val inputEnabled = state.phase !in setOf(
         AiGenerationPhase.CreatingPreview,
+        AiGenerationPhase.WaitingToSubmit,
         AiGenerationPhase.GeneratingPreview,
         AiGenerationPhase.Saving,
     )
+
+    LaunchedEffect(state.historyId, state.phase, state.history.size) {
+        if (state.historyId != null && state.history.isNotEmpty()) {
+            listState.animateScrollToItem(state.history.size - 1)
+        }
+    }
 
     Column(
         modifier
@@ -104,13 +119,13 @@ internal fun AiGenerationChatScreen(
         GenerationTopBar(onBack)
         LazyColumn(
             modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp).weight(1f),
+            state = listState,
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            item { GenerationIntro() }
-            state.prompt?.let { prompt ->
-                item { PromptBubble(prompt) }
-            }
+            if (state.history.isEmpty()) item { GenerationIntro() }
+            /* Current task used to be rendered here and once again in history.
+             * Keep it disabled: every task now has exactly one durable chat card.
             when (state.phase) {
                 AiGenerationPhase.CreatingPreview,
                 AiGenerationPhase.GeneratingPreview,
@@ -152,18 +167,25 @@ internal fun AiGenerationChatScreen(
                 AiGenerationPhase.Failed -> item { GenerationNotice(state.message ?: "生成失败，请修改描述后重试") }
                 AiGenerationPhase.Idle -> Unit
             }
-            if (state.history.isNotEmpty()) {
-                item {
-                    Text("创作记录", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            */
+            if (!state.active && state.phase == AiGenerationPhase.Failed) {
+                state.lastTaskDiagnostic?.takeIf { it.available }?.let { diagnostic ->
+                    item { LastTaskDiagnosticCard(diagnostic) }
                 }
+            }
+            if (state.history.isNotEmpty()) {
                 // Persisted history is newest-first for efficient updates, but the chat surface
                 // is chronological: the newest entry stays near the composer and earlier work
                 // is reached by scrolling upward.
                 items(state.history.asReversed(), key = { it.id }) { item ->
                     GenerationHistoryCard(
                         item = item,
+                        activeState = state.takeIf { it.historyId == item.id },
+                        onConfirmSave = onConfirmSave,
                         onExpandPreview = { expandedHistoryPreview = it },
                         onContinue = { onContinueHistory(item.id) },
+                        onRetrySubmission = { onRetrySubmission(item.id) },
+                        onCancelWaiting = { onCancelWaitingSubmission(item.id) },
                         onDiscard = { onDiscardHistory(item.id) },
                         onOpenAiImages = onOpenAiImages,
                     )
@@ -179,6 +201,7 @@ internal fun AiGenerationChatScreen(
             compact = (state.preview != null || state.history.isNotEmpty()) && !composerExpanded,
             onExpand = { composerExpanded = true },
             onGenerate = {
+                focusManager.clearFocus(force = true)
                 onGenerate(draft)
                 draft = ""
                 composerExpanded = false
@@ -194,6 +217,73 @@ internal fun AiGenerationChatScreen(
     expandedHistoryPreview?.let { preview ->
         PreviewDialog(preview, onDismiss = { expandedHistoryPreview = null })
     }
+}
+
+@Composable
+private fun LastTaskDiagnosticCard(diagnostic: AiGenerationLastTaskDiagnostic) {
+    OutlinedCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("最近任务诊断", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("用于确认最近一次任务的设备状态；不包含 API Key 或完整图片描述。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            DiagnosticLine("完成时设备已运行", diagnosticUptimeLabel(diagnostic.finishedAtUptimeMillis))
+            DiagnosticLine("模型", diagnostic.profileName ?: diagnostic.profileId ?: "未提供")
+            DiagnosticLine("状态", diagnosticStateLabel(diagnostic.state, diagnostic.phase))
+            DiagnosticLine("错误说明", diagnosticErrorLabel(diagnostic.errorCode))
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticLine(label: String, value: String) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.bodySmall, textAlign = TextAlign.End, modifier = Modifier.weight(1f).padding(start = 20.dp))
+    }
+}
+
+private fun diagnosticUptimeLabel(uptimeMillis: Long): String {
+    if (uptimeMillis <= 0L) return "设备未提供"
+    val totalSeconds = uptimeMillis / 1_000L
+    val hours = totalSeconds / 3_600L
+    val minutes = (totalSeconds % 3_600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) "%d小时%02d分".format(hours, minutes) else "%d分%02d秒".format(minutes, seconds)
+}
+
+private fun diagnosticStateLabel(state: String, phase: String): String = when {
+    state in setOf("success", "completed", "2") -> "已完成"
+    state in setOf("failed", "error", "3") -> "未完成"
+    phase == "converting" -> "转换中断"
+    phase == "downloading" -> "下载中断"
+    else -> "已结束"
+}
+
+private fun diagnosticErrorLabel(code: String?): String = when (code) {
+    "ai_http_400" -> "请求参数不兼容（ai_http_400）"
+    "ai_http_401" -> "API Key 无效或已失效（ai_http_401）"
+    "ai_http_403" -> "当前模型没有访问权限（ai_http_403）"
+    "ai_http_404" -> "未找到模型或服务地址（ai_http_404）"
+    "ai_http_429" -> "服务暂时限流（ai_http_429）"
+    "ai_network_failed" -> "相框无法访问模型服务（ai_network_failed）"
+    "ai_tls_failed" -> "安全连接异常（ai_tls_failed）"
+    "ai_request_timeout" -> "模型服务响应超时（ai_request_timeout）"
+    "ai_invalid_provider_response" -> "模型服务返回内容无法识别（ai_invalid_provider_response）"
+    "ai_download_failed" -> "生成成功但图片下载失败（ai_download_failed）"
+    "ai_download_tls_failed" -> "图片服务器安全连接失败（ai_download_tls_failed）"
+    "ai_download_timeout" -> "下载生成图片超时（ai_download_timeout）"
+    "ai_download_network_failed" -> "相框无法连接图片服务器（ai_download_network_failed）"
+    "ai_download_http_4xx" -> "图片临时链接已失效或无权限（ai_download_http_4xx）"
+    "ai_download_http_5xx" -> "图片服务器暂时异常（ai_download_http_5xx）"
+    "ai_download_redirect_failed" -> "图片下载跳转失败（ai_download_redirect_failed）"
+    "ai_download_storage_failed" -> "写入临时图片失败（ai_download_storage_failed）"
+    "ai_source_too_large" -> "生成图片超过相框可处理大小（ai_source_too_large）"
+    "ai_conversion_memory" -> "相框内存不足，无法转换六色图（ai_conversion_memory）"
+    "ai_conversion_failed" -> "生成图片无法转换为六色电子纸画面（ai_conversion_failed）"
+    "ai_preview_commit_failed" -> "临时预览保存失败（ai_preview_commit_failed）"
+    "ai_commit_failed" -> "图片写入 AI 相册失败（ai_commit_failed）"
+    "storage_no_space" -> "TF 卡空间不足（storage_no_space）"
+    null -> "设备未提供安全错误码"
+    else -> "任务未完成（$code）"
 }
 
 @Composable
@@ -324,11 +414,27 @@ private fun SavedCard(message: String, onOpenAiImages: () -> Unit) {
 @Composable
 private fun GenerationHistoryCard(
     item: AiGenerationHistoryItem,
+    activeState: AiGenerationUiState?,
+    onConfirmSave: () -> Unit,
     onExpandPreview: (AiGenerationPreview) -> Unit,
     onContinue: () -> Unit,
+    onRetrySubmission: () -> Unit,
+    onCancelWaiting: () -> Unit,
     onDiscard: () -> Unit,
     onOpenAiImages: () -> Unit,
 ) {
+    val activePhase = activeState?.phase
+    val livePreview = activeState?.preview ?: item.preview
+    val status = when (activePhase) {
+        AiGenerationPhase.CreatingPreview -> AiGenerationSaveStatus.Submitting
+        AiGenerationPhase.WaitingToSubmit -> AiGenerationSaveStatus.WaitingToSubmit
+        AiGenerationPhase.GeneratingPreview -> AiGenerationSaveStatus.Generating
+        AiGenerationPhase.PreviewReady -> AiGenerationSaveStatus.PreviewReady
+        AiGenerationPhase.Saving -> AiGenerationSaveStatus.Saving
+        AiGenerationPhase.Saved -> AiGenerationSaveStatus.Saved
+        AiGenerationPhase.Failed -> AiGenerationSaveStatus.Failed
+        null, AiGenerationPhase.Idle -> item.saveStatus
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(historyTime(item.createdAtEpochMillis), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center)
         PromptBubble(item.prompt)
@@ -341,18 +447,18 @@ private fun GenerationHistoryCard(
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(
-                            when (item.saveStatus) {
+                            when (status) {
                                 AiGenerationSaveStatus.Saved -> Icons.Outlined.CheckCircle
                                 AiGenerationSaveStatus.Failed -> Icons.Outlined.Image
                                 AiGenerationSaveStatus.Cancelled -> Icons.Outlined.Image
                                 else -> Icons.Outlined.AutoAwesome
                             },
                             contentDescription = null,
-                            tint = if (item.saveStatus == AiGenerationSaveStatus.Saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            tint = if (status == AiGenerationSaveStatus.Saved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
-                        Text(historyStatusLabel(item.saveStatus), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+                        Text(historyStatusLabel(status), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                     }
-                    item.preview?.let { preview ->
+                    livePreview?.let { preview ->
                         Card(
                             modifier = Modifier.fillMaxWidth().aspectRatio(4f / 3f).pressFeedbackClickable(role = Role.Button, onClick = { onExpandPreview(preview) }),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
@@ -360,24 +466,46 @@ private fun GenerationHistoryCard(
                             GenerationBitmap(preview, Modifier.fillMaxSize(), "历史生成预览，点击放大")
                         }
                     }
-                    historyDetail(item.saveStatus)?.let {
+                    (activeState?.message ?: item.failureReason ?: historyDetail(status))?.let {
                         Text(it, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    when (item.saveStatus) {
+                    when (status) {
+                        AiGenerationSaveStatus.Submitting,
                         AiGenerationSaveStatus.Generating,
                         AiGenerationSaveStatus.Saving,
-                        AiGenerationSaveStatus.PreviewReady,
-                        -> OutlinedButton(onClick = onContinue, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(if (item.saveStatus == AiGenerationSaveStatus.PreviewReady) "继续保存" else "继续查询")
+                        -> if (activeState != null) {
+                            GenerationProgress(activeState.message ?: "正在处理…")
+                        } else OutlinedButton(onClick = onContinue, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text("继续查询")
+                        }
+                        AiGenerationSaveStatus.WaitingToSubmit -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            GenerationProgress(activeState?.message ?: "正在等待上一项任务结束…")
+                            TextButton(onClick = onCancelWaiting, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text("取消等待")
+                            }
+                        }
+                        AiGenerationSaveStatus.PreviewReady -> if (activeState != null) {
+                            Button(onClick = onConfirmSave, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
+                                Icon(Icons.Outlined.CheckCircle, contentDescription = null)
+                                Spacer(Modifier.size(8.dp))
+                                Text("转换并保存到 AI 相册")
+                            }
+                        } else OutlinedButton(onClick = onContinue, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text("继续保存")
                         }
                         AiGenerationSaveStatus.Saved -> OutlinedButton(onClick = onOpenAiImages, modifier = Modifier.heightIn(min = 48.dp)) {
                             Icon(Icons.Outlined.PhotoLibrary, contentDescription = null)
                             Spacer(Modifier.size(6.dp))
                             Text("前往 AI 图片")
                         }
+                        AiGenerationSaveStatus.Failed -> if (item.failureReason.orEmpty().startsWith("未提交")) {
+                            OutlinedButton(onClick = onRetrySubmission, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text("重新提交")
+                            }
+                        }
                         else -> Unit
                     }
-                    if (item.saveStatus != AiGenerationSaveStatus.Cancelled) {
+                    if (status !in setOf(AiGenerationSaveStatus.Saved, AiGenerationSaveStatus.Cancelled)) {
                         TextButton(onClick = onDiscard, modifier = Modifier.heightIn(min = 48.dp)) { Text("丢弃此记录") }
                     }
                 }
@@ -387,6 +515,8 @@ private fun GenerationHistoryCard(
 }
 
 private fun historyStatusLabel(status: AiGenerationSaveStatus): String = when (status) {
+    AiGenerationSaveStatus.Submitting -> "正在提交"
+    AiGenerationSaveStatus.WaitingToSubmit -> "等待提交"
     AiGenerationSaveStatus.Generating -> "生成中"
     AiGenerationSaveStatus.PreviewReady -> "预览已生成"
     AiGenerationSaveStatus.Saving -> "保存中"
@@ -396,6 +526,8 @@ private fun historyStatusLabel(status: AiGenerationSaveStatus): String = when (s
 }
 
 private fun historyDetail(status: AiGenerationSaveStatus): String? = when (status) {
+    AiGenerationSaveStatus.Submitting -> "正在将本次请求发送到相框。"
+    AiGenerationSaveStatus.WaitingToSubmit -> "等待上一项任务结束；本条尚未调用模型。"
     AiGenerationSaveStatus.Generating -> "任务仍在相框端处理，可继续查询进度。"
     AiGenerationSaveStatus.PreviewReady -> "临时预览保存在本机；确认保存后才会写入 TF 卡。"
     AiGenerationSaveStatus.Saving -> "正在转换并写入 AI 相册，可继续查询进度。"

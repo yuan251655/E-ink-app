@@ -240,6 +240,8 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onGenerateAiImage = aiGenerationViewModel::generate,
                 onConfirmAiSave = aiGenerationViewModel::confirmSave,
                 onContinueAiHistory = aiGenerationViewModel::continueQuery,
+                onRetryAiSubmission = aiGenerationViewModel::retrySubmission,
+                onCancelAiWaitingSubmission = aiGenerationViewModel::cancelWaitingSubmission,
                 onDiscardAiHistory = aiGenerationViewModel::discardHistory,
                 contentPadding = padding,
             )

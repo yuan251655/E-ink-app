@@ -67,6 +67,7 @@ class AiGenerationHistoryStore(context: Context) {
                     saveStatus = status,
                     preview = preview,
                     mediaId = item.optString("media_id").takeIf(::isSafeId),
+                    failureReason = item.optString("failure_reason").takeIf { it.isNotBlank() }?.take(160),
                     remoteJobId = item.optString("remote_job_id").takeIf(::isSafeId),
                 ))
             }
@@ -86,6 +87,7 @@ class AiGenerationHistoryStore(context: Context) {
                     .put("created_at_ms", item.createdAtEpochMillis)
                     .put("save_status", item.saveStatus.name)
                     .put("media_id", item.mediaId)
+                    .put("failure_reason", item.failureReason)
                     .put("remote_job_id", item.remoteJobId)
                     .put("preview", item.preview?.let(::previewJson)))
             }
