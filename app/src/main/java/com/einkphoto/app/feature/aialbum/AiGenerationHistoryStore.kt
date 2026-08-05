@@ -37,6 +37,14 @@ class AiGenerationHistoryStore(context: Context) {
         }
     }
 
+    /** Clears only App-private conversation history and temporary previews. Device AI media stays intact. */
+    suspend fun clear(): Unit = mutex.withLock {
+        withContext(Dispatchers.IO) {
+            writeIndex(emptyList())
+            prunePreviewFiles(emptyList())
+        }
+    }
+
     private fun readIndex(): List<AiGenerationHistoryItem> = runCatching {
         if (!indexFile.isFile) return emptyList()
         val root = JSONObject(indexFile.readText(Charsets.UTF_8))

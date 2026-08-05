@@ -160,6 +160,19 @@ class AiGenerationViewModel(
         }
     }
 
+    /** Clearing history is intentionally unavailable while a request or TF save is active. */
+    fun clearHistory() {
+        if (mutableState.value.active) return
+        viewModelScope.launch {
+            val cleared = runCatching { repository.clearHistory() }.isSuccess
+            if (cleared) {
+                mutableState.value = AiGenerationUiState(message = "已清理本机对话记录和临时预览")
+            } else {
+                mutableState.value = mutableState.value.copy(message = "清理本机对话记录失败，请重试")
+            }
+        }
+    }
+
     private suspend fun submitExisting(historyId: String, prompt: String) {
         val result = repository.createDirectPreview(prompt, historyId)
         if (result.isFailure) {

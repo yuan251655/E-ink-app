@@ -35,8 +35,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Bump this migration build so Android cannot retain the pre-Seedream-direct APK.
-        versionCode = 15
-        versionName = "1.0.3-ai-tf-save"
+        versionCode = 17
+        versionName = "1.0.5-ai-home-fixes"
         buildConfigField("String", "APP_UPDATE_MANIFEST_URL", "\"$appUpdateManifestUrl\"")
     }
 

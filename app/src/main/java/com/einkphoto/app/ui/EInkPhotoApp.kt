@@ -244,6 +244,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onRetryAiSubmission = aiGenerationViewModel::retrySubmission,
                 onCancelAiWaitingSubmission = aiGenerationViewModel::cancelWaitingSubmission,
                 onDiscardAiHistory = aiGenerationViewModel::discardHistory,
+                onClearAiHistory = aiGenerationViewModel::clearHistory,
                 contentPadding = padding,
             )
             AppDestination.Settings -> NetworkSettingsScreen(

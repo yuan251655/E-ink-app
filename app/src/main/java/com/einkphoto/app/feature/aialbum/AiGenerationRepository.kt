@@ -153,6 +153,8 @@ class AiGenerationRepository(
 
     suspend fun saveHistory(item: AiGenerationHistoryItem): List<AiGenerationHistoryItem> = historyStore.upsert(item)
 
+    suspend fun clearHistory() = historyStore.clear()
+
     private fun DownloadedFile.toPreviewFile(file: File): AiGenerationPreviewFile =
         AiGenerationPreviewFile(Uri.fromFile(file).toString(), mimeType, sizeBytes)
 

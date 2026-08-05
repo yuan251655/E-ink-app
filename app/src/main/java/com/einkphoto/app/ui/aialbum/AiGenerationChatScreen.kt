@@ -30,6 +30,7 @@ import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.OpenInFull
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -88,6 +89,7 @@ internal fun AiGenerationChatScreen(
     onRetrySubmission: (String) -> Unit = {},
     onCancelWaitingSubmission: (String) -> Unit = {},
     onDiscardHistory: (String) -> Unit = {},
+    onClearHistory: () -> Unit = {},
     photoStyleOnly: Boolean = false,
     onBack: () -> Unit,
     contentPadding: PaddingValues,
@@ -99,6 +101,7 @@ internal fun AiGenerationChatScreen(
     var composerExpanded by rememberSaveable { mutableStateOf(false) }
     var selectedTemplateCategoryName by rememberSaveable { mutableStateOf<String?>(null) }
     var selectedTemplateId by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmClearHistory by rememberSaveable { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
@@ -129,7 +132,13 @@ internal fun AiGenerationChatScreen(
             .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        GenerationTopBar(onBack, photoStyleOnly)
+        GenerationTopBar(
+            onBack = onBack,
+            photoStyleOnly = photoStyleOnly,
+            showClearHistory = state.history.isNotEmpty(),
+            clearHistoryEnabled = !state.active,
+            onClearHistory = { confirmClearHistory = true },
+        )
         LazyColumn(
             modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp).weight(1f),
             state = listState,
@@ -245,6 +254,20 @@ internal fun AiGenerationChatScreen(
     expandedHistoryPreview?.let { preview ->
         PreviewDialog(preview, onDismiss = { expandedHistoryPreview = null })
     }
+    if (confirmClearHistory) {
+        AlertDialog(
+            onDismissRequest = { confirmClearHistory = false },
+            title = { Text("清理对话记录？") },
+            text = { Text("这会删除本机的图片生成对话和临时预览，不会删除已保存到 AI 相册或 TF 卡的图片。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmClearHistory = false
+                    onClearHistory()
+                }) { Text("确认清理") }
+            },
+            dismissButton = { TextButton(onClick = { confirmClearHistory = false }) { Text("取消") } },
+        )
+    }
 }
 
 @Composable
@@ -315,7 +338,13 @@ private fun diagnosticErrorLabel(code: String?): String = when (code) {
 }
 
 @Composable
-private fun GenerationTopBar(onBack: () -> Unit, photoStyleOnly: Boolean = false) {
+private fun GenerationTopBar(
+    onBack: () -> Unit,
+    photoStyleOnly: Boolean = false,
+    showClearHistory: Boolean = false,
+    clearHistoryEnabled: Boolean = false,
+    onClearHistory: () -> Unit = {},
+) {
     Row(
         Modifier.fillMaxWidth().widthIn(max = 720.dp).padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -323,9 +352,18 @@ private fun GenerationTopBar(onBack: () -> Unit, photoStyleOnly: Boolean = false
         IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回 AI 相册")
         }
-        Column(Modifier.padding(start = 6.dp)) {
+        Column(Modifier.weight(1f).padding(start = 6.dp)) {
             Text(if (photoStyleOnly) "照片风格转换" else "创作图片", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(if (photoStyleOnly) "正在使用已选风格处理照片" else "先看预览，再确认保存", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        if (!photoStyleOnly && showClearHistory) {
+            TextButton(
+                onClick = onClearHistory,
+                enabled = clearHistoryEnabled,
+                modifier = Modifier.heightIn(min = 48.dp),
+            ) {
+                Text("清理历史")
+            }
         }
     }
 }

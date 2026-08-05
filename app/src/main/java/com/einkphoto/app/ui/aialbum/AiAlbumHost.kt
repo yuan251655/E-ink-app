@@ -116,6 +116,8 @@ internal fun aiBackDestination(current: AiAlbumRoute): AiAlbumRoute = when (curr
     AiAlbumRoute.ModelConfig -> AiAlbumRoute.Home
     AiAlbumRoute.ImageDetail -> AiAlbumRoute.Images
     AiAlbumRoute.Images -> AiAlbumRoute.Home
+    AiAlbumRoute.StyleDetail -> AiAlbumRoute.StyleGallery
+    AiAlbumRoute.StyleGallery -> AiAlbumRoute.Home
     else -> AiAlbumRoute.Home
 }
 
@@ -181,6 +183,7 @@ fun AiAlbumHost(
     onRetryAiSubmission: (String) -> Unit = {},
     onCancelAiWaitingSubmission: (String) -> Unit = {},
     onDiscardAiHistory: (String) -> Unit = {},
+    onClearAiHistory: () -> Unit = {},
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
@@ -232,7 +235,7 @@ fun AiAlbumHost(
         // to replace a ready gallery with a visible loading loop.
         if (route == AiAlbumRoute.Home && device.connection == DeviceConnectionState.Online) onRefreshAiImages()
         if (route in setOf(AiAlbumRoute.ModelConfig, AiAlbumRoute.ModelEditor, AiAlbumRoute.ModelSwitch) && device.connection == DeviceConnectionState.Online) onRefreshAiConfig()
-        if (route == AiAlbumRoute.Playback && device.connection == DeviceConnectionState.Online) onRefreshAiPlayback()
+        if (route in setOf(AiAlbumRoute.Home, AiAlbumRoute.Playback) && device.connection == DeviceConnectionState.Online) onRefreshAiPlayback()
     }
     BackHandler(enabled = route != AiAlbumRoute.Home, onBack = back)
     if (route == AiAlbumRoute.Home) {
@@ -373,6 +376,7 @@ fun AiAlbumHost(
             onRetrySubmission = onRetryAiSubmission,
             onCancelWaitingSubmission = onCancelAiWaitingSubmission,
             onDiscardHistory = onDiscardAiHistory,
+            onClearHistory = onClearAiHistory,
             photoStyleOnly = photoStyleCreate,
             onBack = back,
             contentPadding = contentPadding,
@@ -486,6 +490,16 @@ private fun AiAlbumHomeScreen(
                 }
             }
             item {
+                Button(
+                    onClick = { onNavigate(AiAlbumRoute.StyleGallery) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                ) {
+                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
+                    Spacer(Modifier.size(8.dp))
+                    Text("照片风格转换")
+                }
+            }
+            item {
                 XiaozhiInputCard(
                     onOpenSettings = onOpenXiaozhiSettings,
                     activeAiMode = device.activeFeature == DeviceFeature.AiAlbum,
@@ -500,12 +514,6 @@ private fun AiAlbumHomeScreen(
                         AiShortcutCard(Icons.Outlined.Collections, "AI 图片", "查看生成记录", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Images) }
                         AiShortcutCard(Icons.Outlined.Schedule, "轮播设置", "仅播放 AI 图片", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Playback) }
                     }
-                    AiShortcutCard(
-                        Icons.Outlined.AutoAwesome,
-                        "照片风格转换",
-                        "导入照片，选择固定风格生成预览",
-                        Modifier.fillMaxWidth(),
-                    ) { onNavigate(AiAlbumRoute.StyleGallery) }
                     AiShortcutCard(
                         Icons.Outlined.SettingsSuggest,
                         "模型配置",
