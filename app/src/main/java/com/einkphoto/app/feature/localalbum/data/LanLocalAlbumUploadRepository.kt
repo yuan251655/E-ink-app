@@ -4,6 +4,7 @@ import android.content.Context
 import com.einkphoto.app.core.device.DeviceCommandResult
 import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.core.device.DeviceMediaDisplayProfile
+import com.einkphoto.app.core.device.DeviceMediaCategory
 import com.einkphoto.app.core.device.DeviceMediaUploadRequest
 import com.einkphoto.app.core.device.DeviceRejection
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
@@ -49,6 +50,7 @@ class LanLocalAlbumUploadRepository(
         }
         val request = DeviceMediaUploadRequest(
             requestId = requestId.take(64),
+            category = DeviceMediaCategory.Local,
             displayName = safeDisplayName(draft.source.displayName),
             imageBinFile = binFile,
             imageBinSizeBytes = binFile.length(),

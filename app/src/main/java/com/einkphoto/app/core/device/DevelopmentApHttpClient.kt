@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.json.JSONException
 import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
@@ -172,7 +173,7 @@ class DevelopmentApHttpClient {
             val boundary = "EinkPhoto-${System.currentTimeMillis()}"
             val metadata = JSONObject()
                 .put("request_id", request.requestId)
-                .put("category", "local")
+                .put("category", request.category.apiValue)
                 .put("upload_mode", "bin_only")
                 .put("display_name", request.displayName)
                 .put("image_bin", JSONObject()
@@ -228,11 +229,7 @@ class DevelopmentApHttpClient {
     suspend fun postJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
-            // Model validation intentionally performs one minimal cloud image
-            // request after the user confirms billing. It follows the official
-            // firmware's 180-second window; a generic 20-second HTTP timeout
-            // would make the App report a false failure first.
-            val readTimeoutMs = if (path == "/api/v1/ai/config/test") 195_000 else 20_000
+            val readTimeoutMs = 20_000
             var lastError: Throwable? = null
             for (endpoint in DeviceEndpointConfig.endpointCandidates) {
                 try {

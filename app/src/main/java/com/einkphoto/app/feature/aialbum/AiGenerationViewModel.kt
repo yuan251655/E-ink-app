@@ -2,17 +2,16 @@ package com.einkphoto.app.feature.aialbum
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.net.Uri
 import android.util.Log
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.util.UUID
 
-/**
- * Two-step device-authoritative generation flow:
- * prompt -> generated preview -> explicit TF conversion/save -> independent AI library refresh.
- * It never creates a display request; showing a committed item remains the gallery's own action.
- */
+/** App-owned generation flow: Seedream preview on the phone, then explicit BIN-only AI album upload. */
 class AiGenerationViewModel(
     private val repository: AiGenerationRepository,
     private val onCompleted: () -> Unit,
@@ -53,14 +52,76 @@ class AiGenerationViewModel(
         )
         mutableState.value = AiGenerationUiState(
             phase = AiGenerationPhase.CreatingPreview,
-            message = "正在提交生成任务…",
+            message = "正在连接 Seedream…",
             prompt = normalized,
             historyId = historyId,
             history = mergeHistory(mutableState.value.history, submitted),
         )
         viewModelScope.launch {
             persistHistory(submitted)
-            submitExisting(historyId, normalized)
+            val result = repository.createDirectPreview(normalized, historyId)
+            if (result.isFailure) {
+                fail(normalized, generationFailureText(result.exceptionOrNull()?.message), historyId)
+                return@launch
+            }
+            val preview = result.getOrThrow()
+            mutableState.value = AiGenerationUiState(
+                phase = AiGenerationPhase.PreviewReady,
+                message = "预览已生成并保存在手机。确认后才会转换并上传到 AI 相册。",
+                prompt = normalized,
+                historyId = historyId,
+                jobId = preview.jobId,
+                preview = preview,
+                history = mutableState.value.history,
+            )
+            updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.PreviewReady, preview = preview, remoteJobId = null, failureReason = null) }
+        }
+    }
+
+    /** Photo-style mode is App-owned: Seedream receives the prepared JPEG and the ESP is not
+     * contacted until the user explicitly saves the final six-color BIN. */
+    fun generatePhotoStyle(prompt: String, sourceUri: Uri) {
+        val normalized = prompt.trim()
+        if (normalized.isBlank()) return
+        val historyId = "style-${UUID.randomUUID()}"
+        val submitted = AiGenerationHistoryItem(
+            id = historyId,
+            prompt = "照片风格转换",
+            createdAtEpochMillis = System.currentTimeMillis(),
+            saveStatus = AiGenerationSaveStatus.Submitting,
+            preview = null,
+        )
+        mutableState.value = AiGenerationUiState(
+            phase = AiGenerationPhase.CreatingPreview,
+            message = "正在准备照片并连接 Seedream…",
+            prompt = "照片风格转换",
+            historyId = historyId,
+            history = mergeHistory(mutableState.value.history, submitted),
+        )
+        viewModelScope.launch {
+            persistHistory(submitted)
+            val reference = withContext(Dispatchers.Default) { repository.preparePhotoStyleReference(sourceUri) }
+            if (reference.isFailure) {
+                fail("照片风格转换", generationFailureText(reference.exceptionOrNull()?.message), historyId)
+                return@launch
+            }
+            val result = repository.createDirectPhotoStylePreview(normalized, historyId, reference.getOrThrow())
+            if (result.isFailure) {
+                fail("照片风格转换", generationFailureText(result.exceptionOrNull()?.message), historyId)
+                return@launch
+            }
+            val preview = result.getOrThrow()
+            val ready = AiGenerationUiState(
+                phase = AiGenerationPhase.PreviewReady,
+                message = "预览已生成并保存在手机。确认后才会转换并上传到 AI 相册。",
+                prompt = "照片风格转换",
+                historyId = historyId,
+                jobId = preview.jobId,
+                preview = preview,
+                history = mutableState.value.history,
+            )
+            mutableState.value = ready
+            updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.PreviewReady, preview = preview, remoteJobId = null, failureReason = null) }
         }
     }
 
@@ -100,76 +161,22 @@ class AiGenerationViewModel(
     }
 
     private suspend fun submitExisting(historyId: String, prompt: String) {
-        // Do not put a billable request behind a best-effort status read. The
-        // ESP endpoint is the sole admission authority and request_id makes
-        // this submission idempotent across retries/restarts. A stale AP
-        // probe or another low-priority read must never strand a durable
-        // message in "waiting to submit" while the device is actually idle.
-        Log.i("AiGenerationFlow", "submitting message=${historyId.takeLast(12)}")
-        val result = repository.createPreview(prompt, requestIdFor(historyId))
+        val result = repository.createDirectPreview(prompt, historyId)
         if (result.isFailure) {
-            val code = result.exceptionOrNull()?.message
-            if (code == "ai_job_busy") {
-                // The device can reject in the final milliseconds of its
-                // previous worker cleanup. Do not freeze this user message as
-                // a failure: enter the durable wait path and retry only after
-                // a fresh authoritative idle observation.
-                waitForDeviceSlot(historyId, prompt, repository.activeJob().getOrNull())
-            } else {
-                fail(prompt, generationFailureText(code), historyId)
-            }
+            fail(prompt, generationFailureText(result.exceptionOrNull()?.message), historyId)
             return
         }
-        val jobId = result.getOrThrow()
-        updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.Generating, remoteJobId = jobId, failureReason = null) }
-        mutableState.value = mutableState.value.copy(
-            phase = AiGenerationPhase.GeneratingPreview,
-            message = "正在生成预览…",
-            jobId = jobId,
-            historyId = historyId,
-        )
-        awaitPreview(jobId, prompt, historyId)
-    }
-
-    private suspend fun waitForDeviceSlot(historyId: String, prompt: String, active: AiGenerationActiveTask?) {
-        updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.WaitingToSubmit, failureReason = null) }
+        val preview = result.getOrThrow()
         mutableState.value = AiGenerationUiState(
-            phase = AiGenerationPhase.WaitingToSubmit,
-            message = active?.let(::waitingMessage) ?: "相框正在释放上一项任务；本条等待提交，尚未调用模型",
+            phase = AiGenerationPhase.PreviewReady,
+            message = "预览已生成并保存在手机。确认后才会转换并上传到 AI 相册。",
             prompt = prompt,
             historyId = historyId,
+            jobId = preview.jobId,
+            preview = preview,
             history = mutableState.value.history,
         )
-        repeat(MAX_WAIT_ATTEMPTS) {
-            delay(WAIT_POLL_INTERVAL_MS)
-            if (mutableState.value.history.firstOrNull { it.id == historyId }?.saveStatus != AiGenerationSaveStatus.WaitingToSubmit) return
-            val current = repository.activeJob()
-            if (current.isFailure) {
-                mutableState.value = mutableState.value.copy(message = "暂时无法读取上一任务状态，正在安全重试提交")
-                submitExisting(historyId, prompt)
-                return
-            }
-            val task = current.getOrNull()
-            if (task == null) {
-                submitExisting(historyId, prompt)
-                return
-            }
-            mutableState.value = mutableState.value.copy(message = waitingMessage(task))
-        }
-        // Keep this durable wait card instead of pretending the model request failed.
-        mutableState.value = mutableState.value.copy(message = "仍在等待上一项任务结束；本条尚未提交、不会扣费")
-    }
-
-    private fun waitingMessage(task: AiGenerationActiveTask): String =
-        "上一项任务正在${activePhaseLabel(task.phase)}；本条等待提交，尚未调用模型"
-
-    private fun activePhaseLabel(phase: String): String = when (phase) {
-        "requesting" -> "请求模型"
-        "downloading_preview", "downloading" -> "下载生成图片"
-        "converting" -> "转换六色画面"
-        "committing" -> "写入 TF 卡"
-        "queued" -> "排队等待"
-        else -> "处理中"
+        updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.PreviewReady, preview = preview, remoteJobId = null, failureReason = null) }
     }
 
     private fun requestIdFor(historyId: String): String = "ai-preview-$historyId".take(64)
@@ -185,7 +192,7 @@ class AiGenerationViewModel(
                 message = "正在转换并保存到 AI 相册…",
             )
             persistHistory(historyItem(before, AiGenerationSaveStatus.Saving))
-            val result = repository.confirmSave(preview.jobId)
+            val result = repository.confirmSave(preview, requireNotNull(before.historyId))
             if (result.isFailure) {
                 mutableState.value = before.copy(
                     phase = AiGenerationPhase.PreviewReady,
@@ -215,15 +222,11 @@ class AiGenerationViewModel(
         viewModelScope.launch {
             when (item.saveStatus) {
                 AiGenerationSaveStatus.Generating -> {
-                    mutableState.value = AiGenerationUiState(
-                        phase = AiGenerationPhase.GeneratingPreview,
-                        message = "正在继续查询生成进度…",
-                        prompt = item.prompt,
-                        historyId = item.id,
-                        jobId = remoteJobId,
-                        history = mutableState.value.history,
+                    fail(
+                        item.prompt,
+                        "该任务来自已移除的相框端生成链路，无法继续查询。请重新生成；新任务将由手机直连 Seedream。",
+                        item.id,
                     )
-                    awaitPreview(remoteJobId, item.prompt, item.id)
                 }
                 AiGenerationSaveStatus.Saving -> {
                     val preview = item.preview ?: return@launch
@@ -536,14 +539,25 @@ class AiGenerationViewModel(
     }
 
     private fun generationFailureText(code: String?): String = when (code) {
-        "ai_not_configured" -> "请先完成 AI 模型配置"
-        "ai_job_busy" -> "相框正在处理另一项 AI 任务，请稍后再试"
-        "offline" -> "相框未连接"
-        else -> "无法创建预览任务，请检查相框连接、STA 网络和模型配置"
+        "app_ai_not_configured" -> "请先在“小智 AI 设置”中保存 Seedream 的 HTTPS 接入点、模型和 API Key"
+        "prompt_required" -> "缺少生成提示词"
+        "prompt_too_long" -> "提示词过长，请重新选择风格后再试"
+        "reference_image_unavailable" -> "所选照片无法读取，请重新选择一张图片"
+        "seedream_http_401" -> "Seedream API Key 无效或已失效"
+        "seedream_http_403" -> "当前 API Key 没有该模型的访问权限"
+        "seedream_http_404" -> "未找到 Seedream 接入点或模型，请检查设置"
+        "seedream_http_429" -> "Seedream 当前限流，请稍后重试"
+        "seedream_invalid_response" -> "Seedream 返回格式不兼容，请检查接入点设置"
+        "seedream_empty_image", "preview_decode_failed" -> "Seedream 返回的图片无效，请重新生成"
+        else -> "手机直连 Seedream 失败：${code ?: "未知错误"}"
     }
 
     private fun saveFailureText(code: String?): String = when (code) {
         "storage_no_space" -> "TF 卡空间不足"
+        "storage_busy" -> "TF 卡正在处理其他操作，请稍后重试"
+        "storage_unavailable", "storage_write_failed" -> "TF 卡当前不可写，请检查相框存储状态"
+        "unsupported" -> "当前相框固件不支持 AI 相册上传，请升级固件后重试"
+        "checksum_mismatch", "media_incomplete" -> "图片传输校验失败，请重试保存"
         "ai_job_busy" -> "相框正在处理其他任务"
         else -> "请检查相框连接后重试"
     }

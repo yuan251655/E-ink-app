@@ -88,6 +88,7 @@ internal fun AiGenerationChatScreen(
     onRetrySubmission: (String) -> Unit = {},
     onCancelWaitingSubmission: (String) -> Unit = {},
     onDiscardHistory: (String) -> Unit = {},
+    photoStyleOnly: Boolean = false,
     onBack: () -> Unit,
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
@@ -128,7 +129,7 @@ internal fun AiGenerationChatScreen(
             .imePadding(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        GenerationTopBar(onBack)
+        GenerationTopBar(onBack, photoStyleOnly)
         LazyColumn(
             modifier = Modifier.fillMaxWidth().widthIn(max = 720.dp).weight(1f),
             state = listState,
@@ -204,7 +205,7 @@ internal fun AiGenerationChatScreen(
                 }
             }
         }
-        GenerationInputBar(
+        if (!photoStyleOnly) GenerationInputBar(
             draft = draft,
             onDraftChange = { draft = it.take(500) },
             promptTemplates = promptTemplates,
@@ -314,7 +315,7 @@ private fun diagnosticErrorLabel(code: String?): String = when (code) {
 }
 
 @Composable
-private fun GenerationTopBar(onBack: () -> Unit) {
+private fun GenerationTopBar(onBack: () -> Unit, photoStyleOnly: Boolean = false) {
     Row(
         Modifier.fillMaxWidth().widthIn(max = 720.dp).padding(horizontal = 4.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -323,8 +324,8 @@ private fun GenerationTopBar(onBack: () -> Unit) {
             Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回 AI 相册")
         }
         Column(Modifier.padding(start = 6.dp)) {
-            Text("创作图片", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text("先看预览，再确认保存", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (photoStyleOnly) "照片风格转换" else "创作图片", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(if (photoStyleOnly) "正在使用已选风格处理照片" else "先看预览，再确认保存", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

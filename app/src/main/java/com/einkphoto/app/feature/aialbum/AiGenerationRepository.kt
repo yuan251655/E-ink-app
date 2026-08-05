@@ -3,38 +3,55 @@ package com.einkphoto.app.feature.aialbum
 import android.content.Context
 import android.graphics.BitmapFactory
 import android.net.Uri
+import com.einkphoto.app.core.device.DeviceMediaCategory
+import com.einkphoto.app.core.device.DeviceMediaDisplayProfile
+import com.einkphoto.app.core.device.DeviceMediaUploadRequest
 import com.einkphoto.app.core.device.DevelopmentApHttpClient
+import com.einkphoto.app.core.device.DisplayProfile
 import com.einkphoto.app.core.device.DownloadedFile
+import com.einkphoto.app.feature.localalbum.data.LocalDraftRequest
+import com.einkphoto.app.feature.localalbum.data.createLocalDraft
+import com.einkphoto.app.feature.localalbum.model.AdaptationSettings
+import com.einkphoto.app.feature.localalbum.model.PhoneSource
 import java.io.File
+import java.io.FileInputStream
+import java.security.MessageDigest
 import java.util.UUID
 import org.json.JSONObject
 
 /**
- * Adapter for the staged AI generation API. A generated preview is not media-library content:
- * only `confirmSave()` asks the device to convert it and atomically commit BIN + manifest to TF.
+ * App-owned photo-style flow: Seedream receives the phone-prepared JPEG, while the ESP receives
+ * only the final validated six-color BIN for its AI media library.
  */
 class AiGenerationRepository(
-    context: Context,
+    private val context: Context,
     private val client: DevelopmentApHttpClient = DevelopmentApHttpClient(),
     private val historyStore: AiGenerationHistoryStore = AiGenerationHistoryStore(context.applicationContext),
     private val previewDirectory: File = historyStore.previewDirectory,
 ) {
-    suspend fun createPreview(prompt: String, requestId: String): Result<String> {
+    private val directClient = SeedreamDirectClient(context.applicationContext)
+    fun preparePhotoStyleReference(uri: Uri): Result<PhotoStyleReferencePreprocessor.PreparedReference> =
+        PhotoStyleReferencePreprocessor(context.applicationContext).prepare(uri)
+
+    suspend fun createDirectPreview(prompt: String, historyId: String): Result<AiGenerationPreview> = runCatching {
         val normalized = prompt.trim()
-        if (normalized.isEmpty()) return Result.failure(IllegalArgumentException("prompt_required"))
-        if (normalized.length > MAX_PROMPT_CHARS) return Result.failure(IllegalArgumentException("prompt_too_long"))
-        return client.postJson(
-            "/api/v1/ai/generation/jobs",
-            JSONObject()
-                .put("request_id", requestId.takeIf(::isSafeJobId) ?: error("invalid_request_id"))
-                .put("prompt", normalized)
-                .put("stage_only", true)
-                .put("display_when_active", false),
-        ).mapCatching { root ->
-            root.optJSONObject("data")?.optString("job_id")
-                ?.takeIf(::isSafeJobId)
-                ?: error("invalid_generation_job")
-        }
+        require(normalized.isNotEmpty()) { "prompt_required" }
+        require(normalized.length <= MAX_PROMPT_CHARS) { "prompt_too_long" }
+        saveDirectPreview(normalized, historyId, directClient.generate(normalized).getOrThrow())
+    }
+
+    suspend fun createDirectPhotoStylePreview(prompt: String, historyId: String, reference: PhotoStyleReferencePreprocessor.PreparedReference): Result<AiGenerationPreview> = runCatching {
+        val url = directClient.generate(prompt.trim(), reference.file).getOrThrow()
+        saveDirectPreview(prompt, historyId, url)
+    }
+
+    private suspend fun saveDirectPreview(prompt: String, historyId: String, url: String): AiGenerationPreview {
+        previewDirectory.mkdirs()
+        val file = directClient.download(url, File(previewDirectory, "$historyId.seedream.jpg")).getOrThrow()
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "preview_decode_failed" }
+        return AiGenerationPreview("app-$historyId", prompt, Uri.fromFile(file).toString(), "image/jpeg", file.length())
     }
 
     suspend fun job(jobId: String): Result<AiGenerationJob> {
@@ -59,67 +76,77 @@ class AiGenerationRepository(
      * redacted task summary, never a provider response, credential or full
      * original prompt.
      */
-    suspend fun activeJob(): Result<AiGenerationActiveTask?> = client.get("/api/v1/ai/generation/active").mapCatching { root ->
-        val data = root.optJSONObject("data") ?: error("invalid_active_generation")
-        if (!data.optBoolean("has_active_task", false)) return@mapCatching null
-        val jobId = data.optString("job_id", "").takeIf(::isSafeJobId) ?: error("invalid_active_generation")
-        AiGenerationActiveTask(
-            jobId = jobId,
-            phase = data.optString("phase", "").lowercase(),
-            kind = data.optString("kind", ""),
-            promptSummary = data.optString("prompt_summary", "").trim().take(160),
+    @Deprecated("ESP AI generation was removed; generation is App-owned.")
+    suspend fun activeJob(): Result<AiGenerationActiveTask?> = Result.success(null)
+
+    @Deprecated("ESP AI generation was removed; generation is App-owned.")
+    suspend fun lastTaskDiagnostic(): Result<AiGenerationLastTaskDiagnostic?> = Result.success(null)
+
+    @Deprecated("ESP AI generation was removed; previews are App-private.")
+    suspend fun downloadPreview(jobId: String): Result<AiGenerationPreviewFile> =
+        Result.failure(IllegalStateException("legacy_device_generation_removed"))
+
+    /** Converts the App-private generated image, then uploads only its final BIN as `category=ai`. */
+    suspend fun confirmSave(preview: AiGenerationPreview, historyId: String): Result<String> = runCatching {
+        val previewFile = File(requireNotNull(Uri.parse(preview.uri).path)).canonicalFile
+        val previewRoot = previewDirectory.canonicalFile.path + File.separator
+        require(previewFile.path.startsWith(previewRoot) && previewFile.isFile) { "preview_unavailable" }
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(previewFile.absolutePath, bounds)
+        require(bounds.outWidth > 0 && bounds.outHeight > 0) { "preview_decode_failed" }
+        val source = PhoneSource(
+            sourceId = "ai-$historyId".take(64),
+            contentUri = Uri.fromFile(previewFile).toString(),
+            displayName = "照片风格转换",
+            widthPx = bounds.outWidth,
+            heightPx = bounds.outHeight,
         )
+        val draft = createLocalDraft(
+            context = context.applicationContext,
+            request = LocalDraftRequest(
+                source = source,
+                settings = AdaptationSettings(isConfigured = true),
+                profile = AI_DISPLAY_PROFILE,
+            ),
+        )
+        val bin = File(requireNotNull(Uri.parse(draft.candidateBinUri).path)).canonicalFile
+        require(bin.isFile && bin.length() == AI_DISPLAY_PROFILE.frameBytes.toLong()) { "bin_conversion_failed" }
+        client.uploadBinOnly(
+            DeviceMediaUploadRequest(
+                requestId = "ai-save-$historyId".take(64),
+                category = DeviceMediaCategory.Ai,
+                displayName = "照片风格转换-${historyId.takeLast(8)}",
+                imageBinFile = bin,
+                imageBinSizeBytes = bin.length(),
+                imageBinSha256 = sha256(bin),
+                displayProfile = DeviceMediaDisplayProfile(
+                    widthPx = AI_DISPLAY_PROFILE.widthPx,
+                    heightPx = AI_DISPLAY_PROFILE.heightPx,
+                    frameBytes = AI_DISPLAY_PROFILE.frameBytes,
+                    pixelFormat = "4bpp",
+                    palette = "six_color_e6",
+                    orientation = "landscape",
+                    rotationDegrees = 0,
+                    fitMode = "cover",
+                    converterVersion = draft.algorithmVersion,
+                ),
+            ),
+        ).getOrThrow().optJSONObject("data")?.optString("job_id")
+            ?.takeIf(::isSafeJobId)
+            ?: error("invalid_upload_job")
     }
 
-    suspend fun lastTaskDiagnostic(): Result<AiGenerationLastTaskDiagnostic?> = client.get("/api/v1/ai/generation/last").mapCatching { root ->
-        val data = root.optJSONObject("data") ?: error("invalid_last_generation")
-        if (!data.optBoolean("available", false)) return@mapCatching null
-        AiGenerationLastTaskDiagnostic(
-            available = true,
-            jobId = data.optString("job_id", "").takeIf(::isSafeJobId).orEmpty(),
-            kind = data.optString("kind", "").lowercase(),
-            state = data.optString("state", "").lowercase(),
-            phase = data.optString("phase", "").lowercase(),
-            errorCode = data.optString("error_code", "").takeIf { it.matches(Regex("[a-z0-9_]{1,64}")) },
-            finishedAtUptimeMillis = data.optLong("finished_at_uptime_ms", 0L).coerceAtLeast(0L),
-            profileId = data.optString("profile_id", "").takeIf { it.isNotBlank() }?.take(64),
-            profileName = data.optString("profile_name", "").takeIf { it.isNotBlank() }?.take(96),
-        )
-    }
-
-    suspend fun downloadPreview(jobId: String): Result<AiGenerationPreviewFile> {
-        if (!isSafeJobId(jobId)) return Result.failure(IllegalArgumentException("invalid_generation_job"))
-        previewDirectory.mkdirs()
-        val destination = File(previewDirectory, "$jobId.preview")
-        return client.downloadToFile("/api/v1/ai/generation/jobs/$jobId/preview", destination)
-            .mapCatching { file ->
-                // A HTTP 200 only proves that the device returned bytes. The
-                // provider can occasionally return a truncated JPEG; do not
-                // present it as a usable preview or allow a doomed TF
-                // conversion. Bounds-only decoding avoids allocating the full
-                // 2K bitmap just to verify the file.
-                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-                BitmapFactory.decodeFile(destination.absolutePath, bounds)
-                if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
-                    destination.delete()
-                    error("preview_decode_failed")
-                }
-                file.toPreviewFile(destination)
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(16 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
             }
-    }
-
-    suspend fun confirmSave(jobId: String): Result<String> {
-        if (!isSafeJobId(jobId)) return Result.failure(IllegalArgumentException("invalid_generation_job"))
-        return client.postJson(
-            "/api/v1/ai/generation/jobs/$jobId/confirm-save",
-            JSONObject()
-                .put("request_id", requestId("save"))
-                .put("display_after_save", false),
-        ).mapCatching { root ->
-            root.optJSONObject("data")?.optString("job_id")
-                ?.takeIf(::isSafeJobId)
-                ?: error("invalid_generation_job")
         }
+        return digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
     }
 
     suspend fun loadHistory(): List<AiGenerationHistoryItem> = historyStore.load()
@@ -135,6 +162,13 @@ class AiGenerationRepository(
 
     private companion object {
         const val MAX_PROMPT_CHARS = 500
+        val AI_DISPLAY_PROFILE = DisplayProfile(
+            widthPx = 800,
+            heightPx = 480,
+            frameBytes = 192_000,
+            palette = listOf("black", "white", "green", "blue", "red", "yellow"),
+            orientationKey = "landscape",
+        )
     }
 }
 

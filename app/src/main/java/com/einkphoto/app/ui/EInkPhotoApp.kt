@@ -96,7 +96,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         factory = remember {
             object : ViewModelProvider.Factory {
                 @Suppress("UNCHECKED_CAST")
-                override fun <T : ViewModel> create(modelClass: Class<T>): T = AiConfigViewModel(AiConfigRepository()) as T
+                override fun <T : ViewModel> create(modelClass: Class<T>): T = AiConfigViewModel(AiConfigRepository(context.applicationContext)) as T
             }
         },
     )
@@ -238,6 +238,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onActivateAiModel = aiConfigViewModel::activateProfile,
                 aiGenerationUiState = aiGenerationState,
                 onGenerateAiImage = aiGenerationViewModel::generate,
+                onGeneratePhotoStyle = aiGenerationViewModel::generatePhotoStyle,
                 onConfirmAiSave = aiGenerationViewModel::confirmSave,
                 onContinueAiHistory = aiGenerationViewModel::continueQuery,
                 onRetryAiSubmission = aiGenerationViewModel::retrySubmission,

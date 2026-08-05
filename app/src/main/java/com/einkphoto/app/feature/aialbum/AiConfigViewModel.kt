@@ -116,6 +116,7 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
     }
 
     private fun testMessage(code: String, providerMessage: String = ""): String = when (code) {
+        "app_ai_configured" -> providerMessage.ifBlank { "已完成本地配置校验。" }
         "ai_http_400" -> "模型服务拒绝了本次验证：${providerMessage.ifBlank { "请检查模型 ID、API Key 权限和账户状态" }}"
         "ai_http_401" -> "模型服务已连接，但 API Key 无效或已失效。"
         "ai_http_403" -> "模型服务已连接，但当前 API Key 没有该模型的访问权限。"

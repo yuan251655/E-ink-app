@@ -75,6 +75,7 @@ data class DeviceMediaSource(
 /** Fully validated App-private BIN used for one compact `metadata + image_bin` admission request. */
 data class DeviceMediaUploadRequest(
     val requestId: String,
+    val category: DeviceMediaCategory,
     val displayName: String,
     val imageBinFile: File,
     val imageBinSizeBytes: Long,

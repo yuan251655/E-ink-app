@@ -78,6 +78,8 @@ import com.einkphoto.app.feature.aialbum.AiImageUiState
 import com.einkphoto.app.feature.aialbum.AiConfigUiState
 import com.einkphoto.app.feature.aialbum.AiModelProfile
 import com.einkphoto.app.feature.aialbum.AiGenerationUiState
+import com.einkphoto.app.feature.aialbum.PhotoStyleCatalog
+import com.einkphoto.app.feature.aialbum.PhotoStylePreset
 import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
 import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.PlayMode
@@ -99,6 +101,8 @@ internal enum class AiAlbumRoute(val title: String, val description: String) {
     Images("AI 图片", "这里将只管理 AI 相册生成的图片，不会混入本地相册内容。"),
     ImageDetail("图片详情", "查看 AI 图片信息与可用操作。"),
     Create("创建 AI 图片", "生图任务将在模型配置与设备接口接入后开放。"),
+    StyleGallery("照片风格转换", "选择一种风格，导入照片后生成预览。"),
+    StyleDetail("风格转换", "导入一张手机照片并开始转换。"),
     Playback("AI 轮播设置", "AI 轮播拥有独立的开关、间隔和播放顺序。"),
     ModelConfig("模型管理", ""),
     ModelEditor("模型配置", ""),
@@ -171,6 +175,7 @@ fun AiAlbumHost(
     onActivateAiModel: (String) -> Unit = {},
     aiGenerationUiState: AiGenerationUiState = AiGenerationUiState(),
     onGenerateAiImage: (String) -> Unit = {},
+    onGeneratePhotoStyle: (String, Uri) -> Unit = { _, _ -> },
     onConfirmAiSave: () -> Unit = {},
     onContinueAiHistory: (String) -> Unit = {},
     onRetryAiSubmission: (String) -> Unit = {},
@@ -185,6 +190,8 @@ fun AiAlbumHost(
     var tutorialCompletedSteps by rememberSaveable { mutableStateOf(emptyList<Int>()) }
     var selectedAiImageId by rememberSaveable { mutableStateOf<String?>(null) }
     var editingModelId by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectedPhotoStyleId by rememberSaveable { mutableStateOf<String?>(null) }
+    var photoStyleCreate by rememberSaveable { mutableStateOf(false) }
     // Secret is intentionally ordinary in-memory state: Config <-> Tutorial keeps it, but SavedState,
     // rotation/process recreation and a disposed AI host cannot restore it.
     var pendingApiKey by remember { mutableStateOf("") }
@@ -240,7 +247,10 @@ fun AiAlbumHost(
                 context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse("https://xiaozhi.me/")))
             },
             onOpenConfig = openConfig,
-            onNavigate = navigate,
+            onNavigate = { destination ->
+                if (destination == AiAlbumRoute.Create) photoStyleCreate = false
+                navigate(destination)
+            },
             listState = homeListState,
             modifier = modifier,
         )
@@ -363,10 +373,38 @@ fun AiAlbumHost(
             onRetrySubmission = onRetryAiSubmission,
             onCancelWaitingSubmission = onCancelAiWaitingSubmission,
             onDiscardHistory = onDiscardAiHistory,
+            photoStyleOnly = photoStyleCreate,
             onBack = back,
             contentPadding = contentPadding,
             modifier = modifier,
         )
+    } else if (route == AiAlbumRoute.StyleGallery) {
+        PhotoStyleGalleryScreen(
+            onBack = back,
+            onSelect = { preset ->
+                selectedPhotoStyleId = preset.id
+                routeName = AiAlbumRoute.StyleDetail.name
+            },
+            contentPadding = contentPadding,
+            modifier = modifier,
+        )
+    } else if (route == AiAlbumRoute.StyleDetail) {
+        val preset = PhotoStyleCatalog.presets.firstOrNull { it.id == selectedPhotoStyleId }
+        if (preset == null) {
+            routeName = AiAlbumRoute.StyleGallery.name
+        } else {
+            PhotoStyleDetailScreen(
+                preset = preset,
+                onBack = back,
+                onStart = { selected, uri ->
+                    onGeneratePhotoStyle(selected.prompt, uri)
+                    photoStyleCreate = true
+                    routeName = AiAlbumRoute.Create.name
+                },
+                contentPadding = contentPadding,
+                modifier = modifier,
+            )
+        }
     } else if (route == AiAlbumRoute.ModelTutorial) {
         AiModelTutorialScreen(
             currentStep = tutorialCurrentStep,
@@ -462,6 +500,12 @@ private fun AiAlbumHomeScreen(
                         AiShortcutCard(Icons.Outlined.Collections, "AI 图片", "查看生成记录", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Images) }
                         AiShortcutCard(Icons.Outlined.Schedule, "轮播设置", "仅播放 AI 图片", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Playback) }
                     }
+                    AiShortcutCard(
+                        Icons.Outlined.AutoAwesome,
+                        "照片风格转换",
+                        "导入照片，选择固定风格生成预览",
+                        Modifier.fillMaxWidth(),
+                    ) { onNavigate(AiAlbumRoute.StyleGallery) }
                     AiShortcutCard(
                         Icons.Outlined.SettingsSuggest,
                         "模型配置",
