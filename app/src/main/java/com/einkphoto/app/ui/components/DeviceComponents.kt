@@ -1,6 +1,12 @@
 package com.einkphoto.app.ui.components
 
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -27,6 +33,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -38,13 +46,51 @@ import com.einkphoto.app.core.device.DeviceSnapshot
 @Composable
 fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifier) {
     val connected = snapshot.connection == DeviceConnectionState.Online
+    val transition = rememberInfiniteTransition(label = "device-connection-breathing")
+    val animatedScale = transition.animateFloat(
+        initialValue = 0.74f,
+        targetValue = 1.18f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1350),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "connection-dot-scale",
+    ).value
+    val animatedAlpha = transition.animateFloat(
+        initialValue = 0.42f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 1350),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "connection-dot-alpha",
+    ).value
+    val pulseScale = if (connected) animatedScale else 1f
+    val pulseAlpha = if (connected) animatedAlpha else 1f
+    val badgeColor = if (connected) MaterialTheme.appSemanticColors.success else MaterialTheme.colorScheme.onErrorContainer
     Surface(
         modifier = modifier.padding(end = 8.dp),
         color = if (connected) MaterialTheme.appSemanticColors.success.copy(alpha = 0.15f) else MaterialTheme.colorScheme.errorContainer,
-        contentColor = if (connected) MaterialTheme.appSemanticColors.success else MaterialTheme.colorScheme.onErrorContainer,
+        contentColor = badgeColor,
         shape = MaterialTheme.shapes.small,
     ) {
-        Text(if (connected) "● 已连接" else "● 未连接", Modifier.padding(horizontal = 10.dp, vertical = 7.dp), style = MaterialTheme.typography.labelMedium)
+        Row(
+            modifier = Modifier
+                .padding(horizontal = 10.dp, vertical = 7.dp)
+                .semantics { contentDescription = if (connected) "相框已连接" else "相框未连接" },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Canvas(
+                modifier = Modifier
+                    .size(8.dp)
+                    .scale(pulseScale)
+                    .alpha(pulseAlpha),
+            ) {
+                drawCircle(color = badgeColor)
+            }
+            Text(if (connected) "已连接" else "未连接", style = MaterialTheme.typography.labelMedium)
+        }
     }
 }
 

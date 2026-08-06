@@ -38,11 +38,25 @@ class DevelopmentApHttpClient {
                     // false "offline" result before batch upload could even start.
                     requestMethod = "GET"; connectTimeout = 8_000; readTimeout = readTimeoutMs
                     setRequestProperty("Connection", "close")
+                    // The product API is JSON-only.  On some Wi-Fi networks a
+                    // portal/router can answer an HTTP request with HTML; do
+                    // not follow that redirect and accidentally treat it as
+                    // an offline PhotoPainter device.
+                    instanceFollowRedirects = false
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("Accept-Encoding", "identity")
+                    useCaches = false
                 }
                 try {
-                    val stream = if (connection.responseCode in 200..299) connection.inputStream else connection.errorStream
-                        ?: error("HTTP ${connection.responseCode}")
+                    val responseCode = connection.responseCode
+                    val contentType = connection.contentType.orEmpty()
+                    val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
+                        ?: error("HTTP $responseCode from $endpoint")
                     val json = stream.bufferedReader().use { it.readText() }
+                    if (!contentType.contains("application/json", ignoreCase = true) || !json.trimStart().startsWith("{")) {
+                        val preview = json.trim().replace(Regex("\\s+"), " ").take(96)
+                        error("non_json_response endpoint=$endpoint code=$responseCode type=$contentType body=$preview")
+                    }
                     val root = JSONObject(json)
                     if (!root.optBoolean("ok", false)) error(root.optString("code", "request_failed"))
                     DeviceEndpointConfig.markEndpointReachable(endpoint)
@@ -52,6 +66,7 @@ class DevelopmentApHttpClient {
                 }
                     } catch (error: Throwable) {
                         lastError = error
+                        Log.w("EInkDeviceHttp", "GET $endpoint$path attempt ${attempt + 1} failed", error)
                         if (attempt < 2) Thread.sleep(500L * (attempt + 1))
                     }
                 }

@@ -29,6 +29,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ErrorOutline
+import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SdCard
@@ -47,6 +48,7 @@ import com.einkphoto.app.feature.settings.storage.StorageHealth
 import com.einkphoto.app.feature.settings.storage.StorageRepository
 import com.einkphoto.app.feature.settings.storage.StorageSnapshot
 import com.einkphoto.app.feature.settings.diagnostics.LanDeviceLogRepository
+import com.einkphoto.app.feature.settings.power.PowerRepository
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.ui.components.pressFeedbackClickable
 import kotlinx.coroutines.launch
@@ -61,6 +63,9 @@ fun NetworkSettingsScreen(
     showStorageManagement: Boolean,
     onOpenStorageManagement: () -> Unit,
     storageRepository: StorageRepository,
+    showPowerSettings: Boolean,
+    onOpenPowerSettings: () -> Unit,
+    powerRepository: PowerRepository,
     showDeviceDiagnostics: Boolean,
     onOpenDeviceDiagnostics: () -> Unit,
     showAppUpdate: Boolean,
@@ -70,9 +75,10 @@ fun NetworkSettingsScreen(
 ) {
     if (showNetworkConfiguration) NetworkConfigurationPage(repository, contentPadding)
     else if (showStorageManagement) StorageManagementPage(storageRepository, contentPadding)
+    else if (showPowerSettings) PowerSettingsScreen(powerRepository, contentPadding)
     else if (showDeviceDiagnostics) DeviceDiagnosticsPage(repository, storageRepository, deviceSnapshot, contentPadding)
     else if (showAppUpdate) AppUpdateScreen(onCloseAppUpdate, contentPadding)
-    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenDeviceDiagnostics, onOpenAppUpdate)
+    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenPowerSettings, onOpenDeviceDiagnostics, onOpenAppUpdate)
 }
 
 @Composable
@@ -81,6 +87,7 @@ private fun SettingsHome(
     contentPadding: PaddingValues,
     onOpenNetwork: () -> Unit,
     onOpenStorageManagement: () -> Unit,
+    onOpenPowerSettings: () -> Unit,
     onOpenDeviceDiagnostics: () -> Unit,
     onOpenAppUpdate: () -> Unit,
 ) {
@@ -103,6 +110,15 @@ private fun SettingsHome(
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("TF 卡管理", style = MaterialTheme.typography.titleMedium)
                     Text("查看存储状态、空间信息和设备维护", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
+        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenPowerSettings)) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Outlined.BatteryChargingFull, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("电池、电源与低功耗", style = MaterialTheme.typography.titleMedium)
+                    Text("查看主电池、USB 充电和低功耗状态", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

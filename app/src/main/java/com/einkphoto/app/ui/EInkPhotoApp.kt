@@ -2,7 +2,9 @@ package com.einkphoto.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -24,17 +26,23 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceSession
 import com.einkphoto.app.core.device.DeviceFeature
+import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.feature.settings.network.LanNetworkRepository
 import com.einkphoto.app.feature.settings.storage.LanStorageRepository
+import com.einkphoto.app.feature.settings.power.LanPowerRepository
 import com.einkphoto.app.ui.components.DeviceConnectionBadge
+import com.einkphoto.app.ui.components.FrameBatteryIcon
 import com.einkphoto.app.ui.localalbum.LocalAlbumDemoHost
 import com.einkphoto.app.ui.localalbum.rememberLocalAlbumDemoRuntime
 import com.einkphoto.app.ui.aialbum.AiAlbumHost
+import com.einkphoto.app.ui.dashboard.InfoDashboardHost
 import com.einkphoto.app.ui.model.AppDestination
 import com.einkphoto.app.ui.screens.FeaturePlaceholderScreen
 import com.einkphoto.app.ui.settings.NetworkSettingsScreen
@@ -115,8 +123,11 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
     val aiPlaybackState by aiPlaybackViewModel.state.collectAsState()
     val networkRepository = remember { LanNetworkRepository() }
     val storageRepository = remember { LanStorageRepository() }
+    val powerRepository = remember { LanPowerRepository() }
+    val powerSnapshot by powerRepository.snapshot.collectAsState()
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
+    var showPowerSettings by rememberSaveable { mutableStateOf(false) }
     var showDeviceDiagnostics by rememberSaveable { mutableStateOf(false) }
     var showAppUpdate by rememberSaveable { mutableStateOf(false) }
     var handledModeSwitchJob by rememberSaveable { mutableStateOf<String?>(null) }
@@ -129,6 +140,17 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         while (true) {
             session.refreshSnapshot()
             delay(8_000L)
+        }
+    }
+    // Keep the header indicator fresh while a real device is online. The
+    // settings page has its own faster heartbeat; this lighter 10-second
+    // cadence makes battery state visible across every App section.
+    LaunchedEffect(snapshot.connection, powerRepository) {
+        if (snapshot.connection != DeviceConnectionState.Online) return@LaunchedEffect
+        powerRepository.refresh()
+        while (true) {
+            delay(10_000L)
+            powerRepository.refresh()
         }
     }
     LaunchedEffect(snapshot.modeSwitchJobId, snapshot.pendingFeature) {
@@ -151,9 +173,10 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         }
     }
 
-    BackHandler(enabled = selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showDeviceDiagnostics)) {
+    BackHandler(enabled = selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showPowerSettings || showDeviceDiagnostics)) {
         showNetworkConfiguration = false
         showStorageManagement = false
+        showPowerSettings = false
         showDeviceDiagnostics = false
     }
 
@@ -163,12 +186,29 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         topBar = {
             Column {
                 CenterAlignedTopAppBar(
-                    title = { Text("墨水屏相册") },
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (snapshot.connection == DeviceConnectionState.Online && powerSnapshot.batteryPresent) {
+                                FrameBatteryIcon(
+                                    percent = powerSnapshot.batteryPercent,
+                                    charging = powerSnapshot.charging,
+                                    full = powerSnapshot.chargerState == "completed",
+                                )
+                                Text(
+                                    text = powerSnapshot.batteryPercent?.let { "$it%" } ?: "--",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(start = 4.dp, end = 10.dp),
+                                )
+                            }
+                            Text("墨水屏相册")
+                        }
+                    },
                     navigationIcon = {
-                        if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showDeviceDiagnostics)) {
+                        if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showPowerSettings || showDeviceDiagnostics)) {
                             IconButton(onClick = {
                                 showNetworkConfiguration = false
                                 showStorageManagement = false
+                                showPowerSettings = false
                                 showDeviceDiagnostics = false
                             }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to settings")
@@ -192,6 +232,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                             // restored unexpectedly after changing tabs or restarting.
                             showNetworkConfiguration = false
                             showStorageManagement = false
+                            showPowerSettings = false
                             showDeviceDiagnostics = false
                             onDestinationSelected(destination)
                         },
@@ -255,6 +296,9 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 showStorageManagement = showStorageManagement,
                 onOpenStorageManagement = { showStorageManagement = true },
                 storageRepository = storageRepository,
+                showPowerSettings = showPowerSettings,
+                onOpenPowerSettings = { showPowerSettings = true },
+                powerRepository = powerRepository,
                 showDeviceDiagnostics = showDeviceDiagnostics,
                 onOpenDeviceDiagnostics = { showDeviceDiagnostics = true },
                 showAppUpdate = showAppUpdate,
@@ -262,8 +306,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onCloseAppUpdate = { showAppUpdate = false },
                 deviceSnapshot = snapshot,
             )
-            else -> FeaturePlaceholderScreen(
-                destination = selected,
+            AppDestination.Dashboard -> InfoDashboardHost(
                 contentPadding = padding,
                 device = snapshot,
                 modeSwitchState = modeSwitchState,
