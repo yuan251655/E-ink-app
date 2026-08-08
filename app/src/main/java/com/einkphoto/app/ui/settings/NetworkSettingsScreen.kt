@@ -117,8 +117,8 @@ private fun SettingsHome(
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Icon(Icons.Outlined.BatteryChargingFull, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("电池、电源与低功耗", style = MaterialTheme.typography.titleMedium)
-                    Text("查看主电池、USB 充电和低功耗状态", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("电池、电源与休眠", style = MaterialTheme.typography.titleMedium)
+                    Text("查看主电池、USB 充电和休眠设置", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }

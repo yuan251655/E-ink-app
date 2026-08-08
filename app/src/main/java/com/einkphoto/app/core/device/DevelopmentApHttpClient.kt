@@ -255,6 +255,9 @@ class DevelopmentApHttpClient {
                         readTimeout = readTimeoutMs
                         setRequestProperty("Content-Type", "application/json; charset=utf-8")
                         setRequestProperty("Connection", "close")
+                        // State-changing App actions count as deliberate user
+                        // activity on the device; background GET heartbeats do not.
+                        setRequestProperty("X-Eink-User-Activity", "1")
                         setFixedLengthStreamingMode(payload.size)
                     }
                     try {

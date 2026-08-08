@@ -23,7 +23,10 @@ class BatteryCalibrationStore(context: Context) {
             .putInt(KEY_FULL_VOLTAGE_MV, voltage)
             .putLong(KEY_FULL_RECORDED_AT, timestamp)
             .putInt(KEY_OBSERVATION_COUNT, 0)
-            .remove(KEY_LOWEST_DISCHARGE_VOLTAGE_MV)
+            .remove(KEY_SAMPLE_POINTS)
+            .remove(KEY_SAMPLE_MIN_VOLTAGE_MV)
+            .remove(KEY_SAMPLE_MAX_VOLTAGE_MV)
+            .remove(KEY_LAST_SAMPLE_AT)
             .remove(KEY_LAST_OBSERVATION_AT)
             .apply()
         mutableState.value = BatteryCalibrationState(fullVoltageMv = voltage, fullRecordedAtMillis = timestamp)
@@ -37,15 +40,29 @@ class BatteryCalibrationStore(context: Context) {
         val now = System.currentTimeMillis()
         val current = mutableState.value
         if (now - current.lastObservationAtMillis < OBSERVATION_INTERVAL_MS) return
-        val lowest = minOf(current.lowestDischargeVoltageMv ?: voltage, voltage)
+        val lowest = minOf(current.sampleMinVoltageMv ?: voltage, voltage)
+        val highest = maxOf(current.sampleMaxVoltageMv ?: voltage, voltage)
+        val point = "$now:$voltage:${snapshot.batteryPercent ?: -1}"
+        val samples = preferences.getString(KEY_SAMPLE_POINTS, "")
+            .orEmpty()
+            .split(',')
+            .filter(String::isNotBlank)
+            .takeLast(MAX_SAMPLE_POINTS - 1)
+            .plus(point)
+            .joinToString(",")
         val next = current.copy(
-            observationCount = current.observationCount + 1,
-            lowestDischargeVoltageMv = lowest,
+            observationCount = minOf(current.observationCount + 1, MAX_SAMPLE_POINTS),
+            sampleMinVoltageMv = lowest,
+            sampleMaxVoltageMv = highest,
+            lastSampleAtMillis = now,
             lastObservationAtMillis = now,
         )
         preferences.edit()
             .putInt(KEY_OBSERVATION_COUNT, next.observationCount)
-            .putInt(KEY_LOWEST_DISCHARGE_VOLTAGE_MV, lowest)
+            .putString(KEY_SAMPLE_POINTS, samples)
+            .putInt(KEY_SAMPLE_MIN_VOLTAGE_MV, lowest)
+            .putInt(KEY_SAMPLE_MAX_VOLTAGE_MV, highest)
+            .putLong(KEY_LAST_SAMPLE_AT, now)
             .putLong(KEY_LAST_OBSERVATION_AT, now)
             .apply()
         mutableState.value = next
@@ -60,7 +77,9 @@ class BatteryCalibrationStore(context: Context) {
         fullVoltageMv = preferences.getInt(KEY_FULL_VOLTAGE_MV, -1).takeIf { it > 0 },
         fullRecordedAtMillis = preferences.getLong(KEY_FULL_RECORDED_AT, 0L).takeIf { it > 0L },
         observationCount = preferences.getInt(KEY_OBSERVATION_COUNT, 0),
-        lowestDischargeVoltageMv = preferences.getInt(KEY_LOWEST_DISCHARGE_VOLTAGE_MV, -1).takeIf { it > 0 },
+        sampleMinVoltageMv = preferences.getInt(KEY_SAMPLE_MIN_VOLTAGE_MV, -1).takeIf { it > 0 },
+        sampleMaxVoltageMv = preferences.getInt(KEY_SAMPLE_MAX_VOLTAGE_MV, -1).takeIf { it > 0 },
+        lastSampleAtMillis = preferences.getLong(KEY_LAST_SAMPLE_AT, 0L),
         lastObservationAtMillis = preferences.getLong(KEY_LAST_OBSERVATION_AT, 0L),
     )
 
@@ -69,10 +88,14 @@ class BatteryCalibrationStore(context: Context) {
         const val KEY_FULL_VOLTAGE_MV = "full_voltage_mv"
         const val KEY_FULL_RECORDED_AT = "full_recorded_at"
         const val KEY_OBSERVATION_COUNT = "observation_count"
-        const val KEY_LOWEST_DISCHARGE_VOLTAGE_MV = "lowest_discharge_voltage_mv"
+        const val KEY_SAMPLE_POINTS = "sample_points"
+        const val KEY_SAMPLE_MIN_VOLTAGE_MV = "sample_min_voltage_mv"
+        const val KEY_SAMPLE_MAX_VOLTAGE_MV = "sample_max_voltage_mv"
+        const val KEY_LAST_SAMPLE_AT = "last_sample_at"
         const val KEY_LAST_OBSERVATION_AT = "last_observation_at"
         const val CHARGER_COMPLETED = "completed"
         const val OBSERVATION_INTERVAL_MS = 5 * 60 * 1000L
+        const val MAX_SAMPLE_POINTS = 200
     }
 }
 
@@ -80,6 +103,8 @@ data class BatteryCalibrationState(
     val fullVoltageMv: Int? = null,
     val fullRecordedAtMillis: Long? = null,
     val observationCount: Int = 0,
-    val lowestDischargeVoltageMv: Int? = null,
+    val sampleMinVoltageMv: Int? = null,
+    val sampleMaxVoltageMv: Int? = null,
+    val lastSampleAtMillis: Long = 0L,
     val lastObservationAtMillis: Long = 0L,
 )

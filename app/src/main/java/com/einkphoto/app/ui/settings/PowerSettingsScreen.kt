@@ -22,6 +22,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -53,6 +54,7 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
     val scope = rememberCoroutineScope()
     var showRecordFullConfirmation by remember { mutableStateOf(false) }
     var showClearCalibrationConfirmation by remember { mutableStateOf(false) }
+    var showSleepTimeoutDialog by remember { mutableStateOf(false) }
     // The battery may transition between USB charging and battery discharge
     // while this page stays visible. Keep a small, bounded heartbeat so the
     // user never has to leave and re-enter the page to see that transition.
@@ -70,7 +72,7 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
         Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text("电池、电源与低功耗", style = MaterialTheme.typography.headlineSmall)
+        Text("电池、电源与休眠", style = MaterialTheme.typography.headlineSmall)
         Text("状态由相框 AXP2101 电源管理芯片实时提供", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
         Card(Modifier.fillMaxWidth()) {
@@ -80,6 +82,47 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
                     Text(powerModeTitle(power), style = MaterialTheme.typography.titleMedium)
                     Text(powerModeDetail(power), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+
+        Text("休眠与轮播", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Card(Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("启动自动休眠", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            automaticSleepStateText(power),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    Switch(
+                        checked = power.automaticSleepEnabled,
+                        onCheckedChange = { enabled ->
+                            scope.launch { repository.saveAutomaticSleep(enabled, power.idleTimeoutMinutes, power.wakeForPlayback) }
+                        },
+                    )
+                }
+                PowerLine("未操作多久后进入休眠", "${power.idleTimeoutMinutes} 分钟")
+                OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { showSleepTimeoutDialog = true }) {
+                    Text("设置未操作时间")
+                }
+                if (power.automaticSleepEnabled) {
+                    PowerLine("下一次闲置休眠", power.idleSleepAtEpochMillis?.let(::dateTimeText) ?: "等待首次有效操作")
+                    PowerLine("当前模式下一次轮播", power.nextPlaybackAtEpochMillis?.let(::dateTimeText) ?: "当前没有轮播计划")
+                }
+                Text("轮播计划保持独立", style = MaterialTheme.typography.titleSmall)
+                Text(
+                    "轮播时间只在“本地相册轮播设置”和“AI 相册轮播设置”中保存。本页面不提供轮播开关、间隔或顺序控制。全局策略完成后，这里会显示当前模式的下一次轮播、下一次休眠与 RTC 唤醒时间。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "轮播计划由对应相册独立保存。KEY 唤醒或 App 主动操作只会重新计算闲置时间，不会改变下一次轮播时间。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -106,13 +149,13 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
             }
         }
 
-        Text("电量校准", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text("自动学习电量曲线", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (calibration.fullVoltageMv == null) {
-                    Text("尚未记录满电基准", style = MaterialTheme.typography.titleSmall)
+                    Text("等待一次满电基准", style = MaterialTheme.typography.titleSmall)
                     Text(
-                        "请保持 USB 连接，等待充电阶段显示“已充满”后再记录。App 只会记录设备确认的满电点，不会用当前百分比直接冒充校准结果。",
+                        "首次只需在充电阶段显示“已充满”时确认一次。之后拔掉 USB 正常使用即可，App 会自动学习电压、AXP 百分比和时间的非线性关系，不需要手动记录中间电量。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -120,14 +163,18 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
                         modifier = Modifier.fillMaxWidth(),
                         enabled = power.batteryPresent && power.chargerState == "completed",
                         onClick = { showRecordFullConfirmation = true },
-                    ) { Text("记录当前为满电") }
+                    ) { Text("确认并开始学习") }
                 } else {
                     PowerLine("满电基准", calibration.fullVoltageMv?.let(::voltageText) ?: "--")
                     PowerLine("记录时间", calibration.fullRecordedAtMillis?.let(::dateTimeText) ?: "--")
-                    PowerLine("放电观察", "${calibration.observationCount} 次")
-                    calibration.lowestDischargeVoltageMv?.let { PowerLine("最低已观察电压", voltageText(it)) }
+                    PowerLine("自动学习状态", if (calibration.observationCount >= 24) "已有初步曲线" else "学习中")
+                    PowerLine("自然采样点", "${calibration.observationCount} 个")
+                    calibration.sampleMinVoltageMv?.let { min ->
+                        val max = calibration.sampleMaxVoltageMv ?: min
+                        PowerLine("采样电压范围", "${voltageText(min)}～${voltageText(max)}")
+                    }
                     Text(
-                        "拔掉 USB 后正常使用即可；仅在此页面打开时，App 每 5 分钟记录一次放电电压。请勿为了校准刻意把电池耗尽。",
+                        "拔掉 USB 后正常使用即可。App 每 5 分钟记录一次放电电压、AXP 百分比和时间，保留最近 200 个点；建议积累 2～3 个自然充放电周期。不会为了校准强制耗尽电池。当前顶部百分比仍以相框 AXP2101 为准。",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -177,7 +224,7 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
         AlertDialog(
             onDismissRequest = { showClearCalibrationConfirmation = false },
             title = { Text("重新开始校准") },
-            text = { Text("将清除本机保存的满电基准和放电观察记录，不会改变相框的充电策略。") },
+            text = { Text("将清除本机保存的满电基准和自动学习采样点，不会改变相框的充电策略。") },
             confirmButton = {
                 TextButton(onClick = {
                     calibrationStore.clear()
@@ -185,6 +232,28 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
                 }) { Text("清除记录") }
             },
             dismissButton = { TextButton(onClick = { showClearCalibrationConfirmation = false }) { Text("取消") } },
+        )
+    }
+    if (showSleepTimeoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showSleepTimeoutDialog = false },
+            title = { Text("未操作多久后进入休眠") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    listOf(1, 2, 5, 10, 15, 30, 60).forEach { minutes ->
+                        TextButton(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = {
+                                scope.launch {
+                                    repository.saveAutomaticSleep(power.automaticSleepEnabled, minutes, power.wakeForPlayback)
+                                    showSleepTimeoutDialog = false
+                                }
+                            },
+                        ) { Text("$minutes 分钟") }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showSleepTimeoutDialog = false }) { Text("取消") } },
         )
     }
 }
@@ -227,6 +296,16 @@ private fun batteryStateText(power: PowerSnapshot): String = when {
     power.discharging -> "正在供电"
     power.batteryPresent -> "已连接，当前未充放电"
     else -> "--"
+}
+
+private fun automaticSleepStateText(power: PowerSnapshot): String = when (power.automaticSleepState) {
+    "disabled" -> "关闭后相框保持常开"
+    "waiting_idle" -> "正在等待无操作时间结束"
+    "ready_to_sleep" -> "正在准备进入休眠"
+    "playback_due" -> "下一次轮播已到，将优先刷新"
+    "busy" -> "有任务进行中，暂不休眠"
+    "rtc_unavailable" -> "RTC 时间不可用，暂不休眠"
+    else -> if (power.automaticSleepEnabled) "正在读取设备休眠状态" else "关闭后相框保持常开"
 }
 
 private fun chargerStateText(value: String): String = when (value) {
