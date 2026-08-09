@@ -69,11 +69,35 @@ class LanPowerRepository(
         )
     }
 
+    override suspend fun saveBatteryDisplay(enabled: Boolean, expectedRevision: Long): PowerActionResult =
+        client.postJson(
+            BATTERY_DISPLAY_PATH,
+            JSONObject()
+                .put("enabled", enabled)
+                .put("expected_revision", expectedRevision),
+        ).fold(
+            onSuccess = { root ->
+                val config = root.optJSONObject("data")
+                    ?: return@fold PowerActionResult.Rejected("invalid_battery_display", "设备返回的电子纸电量显示设置不完整")
+                mutableSnapshot.value = mutableSnapshot.value.copy(
+                    batteryDisplayEnabled = config.optBoolean("enabled", true),
+                    batteryDisplayRevision = config.optLong("revision", expectedRevision),
+                    lastErrorMessage = null,
+                )
+                PowerActionResult.Accepted
+            },
+            onFailure = {
+                mutableSnapshot.value = mutableSnapshot.value.copy(lastErrorMessage = "无法保存电子纸电量显示设置，请确认相框已连接")
+                PowerActionResult.Rejected("device_unreachable", "无法保存电子纸电量显示设置，请确认相框已连接")
+            },
+        )
+
     private fun parse(data: JSONObject?): PowerSnapshot? {
         data ?: return null
         if (!data.has("pmic_online")) return null
         val usb = data.optJSONObject("usb")
         val battery = data.optJSONObject("battery")
+        val batteryDisplay = data.optJSONObject("battery_display")
         val rtcBackup = data.optJSONObject("rtc_backup")
         val policy = data.optJSONObject("policy")
         return PowerSnapshot(
@@ -84,6 +108,8 @@ class LanPowerRepository(
             batteryPresent = battery?.optBoolean("present", false) ?: false,
             batteryVoltageMv = positiveInt(battery, "voltage_mv"),
             batteryPercent = battery?.optInt("percent", -1)?.takeIf { it in 0..100 },
+            batteryDisplayEnabled = batteryDisplay?.optBoolean("enabled", true) ?: true,
+            batteryDisplayRevision = batteryDisplay?.optLong("revision", 0L) ?: 0L,
             charging = battery?.optBoolean("charging", false) ?: false,
             discharging = battery?.optBoolean("discharging", false) ?: false,
             chargerState = battery?.optString("charger_state", "unknown")?.ifBlank { "unknown" } ?: "unknown",
@@ -101,6 +127,7 @@ class LanPowerRepository(
 
     private companion object {
         const val STATUS_PATH = "/api/v1/power/status"
+        const val BATTERY_DISPLAY_PATH = "/api/v1/power/battery-display"
         const val SLEEP_CONFIG_PATH = "/api/v1/power/sleep-config"
         const val SLEEP_STATUS_PATH = "/api/v1/power/sleep-status"
         val ALLOWED_IDLE_TIMEOUTS = setOf(1, 2, 5, 10, 15, 30, 60)

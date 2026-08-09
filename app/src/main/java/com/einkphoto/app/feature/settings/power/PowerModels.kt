@@ -10,6 +10,8 @@ data class PowerSnapshot(
     val batteryVoltageMv: Int? = null,
     /** Fuel-gauge estimate only; it is not a calibrated capacity measurement. */
     val batteryPercent: Int? = null,
+    val batteryDisplayEnabled: Boolean = true,
+    val batteryDisplayRevision: Long = 0,
     val charging: Boolean = false,
     val discharging: Boolean = false,
     val chargerState: String = "unknown",
