@@ -1,5 +1,10 @@
 package com.einkphoto.app.ui.settings
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,6 +23,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -32,10 +38,13 @@ import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.RecordVoiceOver
 import androidx.compose.material.icons.outlined.SdCard
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalContext
+import androidx.core.content.ContextCompat
 import com.einkphoto.app.feature.settings.network.ApConfigDraft
 import com.einkphoto.app.feature.settings.network.NetworkActionResult
 import com.einkphoto.app.feature.settings.network.NetworkRepository
@@ -51,6 +60,7 @@ import com.einkphoto.app.feature.settings.diagnostics.LanDeviceLogRepository
 import com.einkphoto.app.feature.settings.power.PowerRepository
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.ui.components.pressFeedbackClickable
+import com.einkphoto.app.feature.aialbum.VoiceGenerationServiceController
 import kotlinx.coroutines.launch
 
 /** Settings home keeps future features as entries; network configuration is the first complete sub-page. */
@@ -92,6 +102,14 @@ private fun SettingsHome(
     onOpenAppUpdate: () -> Unit,
 ) {
     val state by repository.snapshot.collectAsState()
+    val context = LocalContext.current
+    var voiceServiceEnabled by remember { mutableStateOf(VoiceGenerationServiceController.isEnabled(context)) }
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) {
+            VoiceGenerationServiceController.setEnabled(context, true)
+            voiceServiceEnabled = true
+        }
+    }
     LaunchedEffect(repository) { repository.refresh() }
     Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("设置", style = MaterialTheme.typography.headlineSmall)
@@ -129,6 +147,32 @@ private fun SettingsHome(
                     Text("设备诊断", style = MaterialTheme.typography.titleMedium)
                     Text("查看设备、网络、TF 卡和显示状态", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
+            }
+        }
+        Card(Modifier.fillMaxWidth()) {
+            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Icon(Icons.Outlined.RecordVoiceOver, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("语音生图服务", style = MaterialTheme.typography.titleMedium)
+                    Text("允许小智确认后由手机后台生成，并保存到 AI 相册", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (voiceServiceEnabled) "已开启" else "未开启", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(
+                    checked = voiceServiceEnabled,
+                    onCheckedChange = { enabled ->
+                        if (!enabled) {
+                            VoiceGenerationServiceController.setEnabled(context, false)
+                            voiceServiceEnabled = false
+                        } else if (Build.VERSION.SDK_INT >= 33 &&
+                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                        ) {
+                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        } else {
+                            VoiceGenerationServiceController.setEnabled(context, true)
+                            voiceServiceEnabled = true
+                        }
+                    },
+                )
             }
         }
         Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenAppUpdate)) {

@@ -241,7 +241,7 @@ class DevelopmentApHttpClient {
         }
     } }
 
-    suspend fun postJson(path: String, body: JSONObject): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+    suspend fun postJson(path: String, body: JSONObject, userActivity: Boolean = true): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             val payload = body.toString().toByteArray(StandardCharsets.UTF_8)
             val readTimeoutMs = 20_000
@@ -257,7 +257,7 @@ class DevelopmentApHttpClient {
                         setRequestProperty("Connection", "close")
                         // State-changing App actions count as deliberate user
                         // activity on the device; background GET heartbeats do not.
-                        setRequestProperty("X-Eink-User-Activity", "1")
+                        if (userActivity) setRequestProperty("X-Eink-User-Activity", "1")
                         setFixedLengthStreamingMode(payload.size)
                     }
                     try {
