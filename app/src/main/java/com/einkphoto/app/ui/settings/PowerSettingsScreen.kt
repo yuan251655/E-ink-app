@@ -41,7 +41,6 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
     val power by repository.snapshot.collectAsState()
     val scope = rememberCoroutineScope()
     var showSleepTimeoutDialog by remember { mutableStateOf(false) }
-    var pendingAutomaticSleepEnabled by remember { mutableStateOf<Boolean?>(null) }
     var automaticSleepSaving by remember { mutableStateOf(false) }
 
     LaunchedEffect(repository) {
@@ -69,14 +68,12 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("启动自动休眠", style = MaterialTheme.typography.titleMedium)
                     Switch(
-                        checked = pendingAutomaticSleepEnabled ?: power.automaticSleepEnabled,
+                        checked = power.automaticSleepEnabled,
                         enabled = !automaticSleepSaving,
                         onCheckedChange = { enabled ->
-                            pendingAutomaticSleepEnabled = enabled
                             automaticSleepSaving = true
                             scope.launch {
                                 repository.saveAutomaticSleep(enabled, power.idleTimeoutSeconds, power.wakeForPlayback)
-                                pendingAutomaticSleepEnabled = null
                                 automaticSleepSaving = false
                             }
                         },
