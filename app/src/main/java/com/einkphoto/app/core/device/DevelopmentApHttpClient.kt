@@ -221,15 +221,17 @@ class DevelopmentApHttpClient {
                 setFixedLengthStreamingMode(contentLength)
             }
             try {
-                connection.outputStream.buffered(16 * 1024).use { output ->
+                connection.outputStream.buffered(4 * 1024).use { output ->
                     output.write(metadataHeader); output.write(metadata); output.write("\r\n".toByteArray(StandardCharsets.UTF_8))
-                    output.write(binHeader); request.imageBinFile.inputStream().buffered(16 * 1024).use { it.copyTo(output, 16 * 1024) }
+                    output.write(binHeader); request.imageBinFile.inputStream().buffered(4 * 1024).use { it.copyTo(output, 4 * 1024) }
                     output.write(closing)
                 }
                 val status = connection.responseCode
                 val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                     ?: error("HTTP ${connection.responseCode}")
-                val root = JSONObject(stream.bufferedReader().use { it.readText() })
+                val responseText = stream.bufferedReader().use { it.readText() }
+                check(responseText.trimStart().startsWith("{")) { "HTTP $status: ${responseText.take(120)}" }
+                val root = JSONObject(responseText)
                 if (!root.optBoolean("ok", false)) error(root.optString("code", "upload_failed"))
                 Log.i("EInkDeviceHttp", "UPLOAD ${request.requestId} HTTP $status in ${android.os.SystemClock.elapsedRealtime() - startedAt}ms")
                 root
