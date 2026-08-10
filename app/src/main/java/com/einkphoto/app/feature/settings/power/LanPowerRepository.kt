@@ -20,7 +20,7 @@ class LanPowerRepository(
                 val sleepStatus = client.get(SLEEP_STATUS_PATH).getOrNull()?.optJSONObject("data")
                 mutableSnapshot.value = snapshot.copy(
                     automaticSleepEnabled = sleep?.optBoolean("enabled", false) ?: false,
-                    idleTimeoutMinutes = sleep?.optInt("idle_timeout_minutes", 15)?.takeIf { it in ALLOWED_IDLE_TIMEOUTS } ?: 15,
+                    idleTimeoutSeconds = sleep?.let(::idleTimeoutSeconds) ?: 15 * 60,
                     wakeForPlayback = sleep?.optBoolean("wake_for_playback", true) ?: true,
                     automaticSleepState = sleepStatus?.optString("state", "unknown") ?: "unknown",
                     idleSleepAtEpochMillis = sleepStatus?.optLong("idle_sleep_at_epoch_ms", 0L)?.takeIf { it > 0L },
@@ -40,15 +40,15 @@ class LanPowerRepository(
 
     override suspend fun saveAutomaticSleep(
         enabled: Boolean,
-        idleTimeoutMinutes: Int,
+        idleTimeoutSeconds: Int,
         wakeForPlayback: Boolean,
     ): PowerActionResult {
-        if (idleTimeoutMinutes !in ALLOWED_IDLE_TIMEOUTS) return PowerActionResult.Rejected("invalid_sleep_config", "休眠时间无效")
+        if (idleTimeoutSeconds !in ALLOWED_IDLE_TIMEOUTS) return PowerActionResult.Rejected("invalid_sleep_config", "休眠时间无效")
         return client.postJson(
             SLEEP_CONFIG_PATH,
             JSONObject()
                 .put("enabled", enabled)
-                .put("idle_timeout_minutes", idleTimeoutMinutes)
+                .put("idle_timeout_seconds", idleTimeoutSeconds)
                 .put("wake_for_playback", wakeForPlayback),
         ).fold(
             onSuccess = { root ->
@@ -56,7 +56,7 @@ class LanPowerRepository(
                     ?: return@fold PowerActionResult.Rejected("invalid_sleep_config", "设备返回的休眠设置不完整")
                 mutableSnapshot.value = mutableSnapshot.value.copy(
                     automaticSleepEnabled = sleep.optBoolean("enabled", false),
-                    idleTimeoutMinutes = sleep.optInt("idle_timeout_minutes", 15).takeIf { it in ALLOWED_IDLE_TIMEOUTS } ?: 15,
+                    idleTimeoutSeconds = idleTimeoutSeconds(sleep),
                     wakeForPlayback = sleep.optBoolean("wake_for_playback", true),
                     lastErrorMessage = null,
                 )
@@ -125,11 +125,15 @@ class LanPowerRepository(
     private fun positiveInt(value: JSONObject?, key: String): Int? =
         value?.optInt(key, -1)?.takeIf { it > 0 }
 
+    private fun idleTimeoutSeconds(value: JSONObject): Int =
+        value.optInt("idle_timeout_seconds", value.optInt("idle_timeout_minutes", 15) * 60)
+            .takeIf { it in ALLOWED_IDLE_TIMEOUTS } ?: 15 * 60
+
     private companion object {
         const val STATUS_PATH = "/api/v1/power/status"
         const val BATTERY_DISPLAY_PATH = "/api/v1/power/battery-display"
         const val SLEEP_CONFIG_PATH = "/api/v1/power/sleep-config"
         const val SLEEP_STATUS_PATH = "/api/v1/power/sleep-status"
-        val ALLOWED_IDLE_TIMEOUTS = setOf(1, 2, 5, 10, 15, 30, 60)
+        val ALLOWED_IDLE_TIMEOUTS = setOf(10, 60, 120, 300, 600, 900, 1800, 3600)
     }
 }

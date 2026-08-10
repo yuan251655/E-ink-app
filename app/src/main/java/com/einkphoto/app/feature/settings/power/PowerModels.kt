@@ -22,7 +22,7 @@ data class PowerSnapshot(
     val rtcBackupChargeEnabled: Boolean = false,
     val deepSleepEnabled: Boolean = false,
     val automaticSleepEnabled: Boolean = false,
-    val idleTimeoutMinutes: Int = 15,
+    val idleTimeoutSeconds: Int = 15 * 60,
     val wakeForPlayback: Boolean = true,
     val automaticSleepState: String = "disabled",
     val idleSleepAtEpochMillis: Long? = null,

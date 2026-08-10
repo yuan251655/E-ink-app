@@ -6,6 +6,6 @@ import kotlinx.coroutines.flow.StateFlow
 interface PowerRepository {
     val snapshot: StateFlow<PowerSnapshot>
     suspend fun refresh(): PowerActionResult
-    suspend fun saveAutomaticSleep(enabled: Boolean, idleTimeoutMinutes: Int, wakeForPlayback: Boolean): PowerActionResult
+    suspend fun saveAutomaticSleep(enabled: Boolean, idleTimeoutSeconds: Int, wakeForPlayback: Boolean): PowerActionResult
     suspend fun saveBatteryDisplay(enabled: Boolean, expectedRevision: Long): PowerActionResult
 }

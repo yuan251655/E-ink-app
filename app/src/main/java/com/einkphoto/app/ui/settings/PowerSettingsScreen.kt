@@ -41,6 +41,8 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
     val power by repository.snapshot.collectAsState()
     val scope = rememberCoroutineScope()
     var showSleepTimeoutDialog by remember { mutableStateOf(false) }
+    var pendingAutomaticSleepEnabled by remember { mutableStateOf<Boolean?>(null) }
+    var automaticSleepSaving by remember { mutableStateOf(false) }
 
     LaunchedEffect(repository) {
         repository.refresh()
@@ -67,15 +69,20 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text("启动自动休眠", style = MaterialTheme.typography.titleMedium)
                     Switch(
-                        checked = power.automaticSleepEnabled,
+                        checked = pendingAutomaticSleepEnabled ?: power.automaticSleepEnabled,
+                        enabled = !automaticSleepSaving,
                         onCheckedChange = { enabled ->
+                            pendingAutomaticSleepEnabled = enabled
+                            automaticSleepSaving = true
                             scope.launch {
-                                repository.saveAutomaticSleep(enabled, power.idleTimeoutMinutes, power.wakeForPlayback)
+                                repository.saveAutomaticSleep(enabled, power.idleTimeoutSeconds, power.wakeForPlayback)
+                                pendingAutomaticSleepEnabled = null
+                                automaticSleepSaving = false
                             }
                         },
                     )
                 }
-                PowerLine("未操作多久后进入休眠", "${power.idleTimeoutMinutes} 分钟")
+                PowerLine("未操作多久后进入休眠", sleepTimeoutText(power.idleTimeoutSeconds))
                 OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { showSleepTimeoutDialog = true }) {
                     Text("设置休眠时间")
                 }
@@ -148,16 +155,16 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
             title = { Text("未操作多久后进入休眠") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    listOf(1, 2, 5, 10, 15, 30, 60).forEach { minutes ->
+                    listOf(10, 60, 120, 300, 600, 900, 1800, 3600).forEach { seconds ->
                         TextButton(
                             modifier = Modifier.fillMaxWidth(),
                             onClick = {
                                 scope.launch {
-                                    repository.saveAutomaticSleep(power.automaticSleepEnabled, minutes, power.wakeForPlayback)
+                                    repository.saveAutomaticSleep(power.automaticSleepEnabled, seconds, power.wakeForPlayback)
                                     showSleepTimeoutDialog = false
                                 }
                             },
-                        ) { Text("$minutes 分钟") }
+                        ) { Text(sleepTimeoutText(seconds)) }
                     }
                 }
             },
@@ -165,6 +172,9 @@ fun PowerSettingsScreen(repository: PowerRepository, contentPadding: PaddingValu
         )
     }
 }
+
+private fun sleepTimeoutText(seconds: Int): String =
+    if (seconds < 60) "$seconds 秒" else "${seconds / 60} 分钟"
 
 @Composable
 private fun PowerLine(title: String, value: String) = Row(
