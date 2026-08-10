@@ -35,16 +35,16 @@ fun FrameBatteryIcon(
     }
     Canvas(
         modifier = modifier
-            .size(width = 42.dp, height = 23.dp)
+            .size(width = 34.dp, height = 18.dp)
             .semantics { contentDescription = description },
     ) {
-        val stroke = with(density) { 2.4.dp.toPx() }
-        val corner = with(density) { 5.dp.toPx() }
+        val stroke = with(density) { 2.dp.toPx() }
+        val corner = with(density) { 4.dp.toPx() }
         val bodyLeft = stroke / 2f
         val bodyTop = stroke / 2f
-        val bodyWidth = size.width - with(density) { 6.dp.toPx() } - stroke
+        val bodyWidth = size.width - with(density) { 5.dp.toPx() } - stroke
         val bodyHeight = size.height - stroke
-        val capWidth = with(density) { 4.5.dp.toPx() }
+        val capWidth = with(density) { 3.5.dp.toPx() }
         val capHeight = bodyHeight * 0.46f
         val capTop = (size.height - capHeight) / 2f
 
@@ -81,18 +81,18 @@ fun FrameBatteryIcon(
             else -> Color(0xFFFF6FAE)
         }
         val emptyColor = Color(0xFFF2E6ED)
-        val innerLeft = bodyLeft + with(density) { 5.3.dp.toPx() }
-        val innerTop = bodyTop + with(density) { 4.4.dp.toPx() }
-        val innerHeight = bodyHeight - with(density) { 8.8.dp.toPx() }
-        val gap = with(density) { 2.6.dp.toPx() }
-        val barWidth = (bodyWidth - with(density) { 11.0.dp.toPx() } - gap * 3f) / 4f
+        val innerLeft = bodyLeft + with(density) { 4.dp.toPx() }
+        val innerTop = bodyTop + with(density) { 3.5.dp.toPx() }
+        val innerHeight = bodyHeight - with(density) { 7.dp.toPx() }
+        val gap = with(density) { 1.8.dp.toPx() }
+        val barWidth = (bodyWidth - with(density) { 8.dp.toPx() } - gap * 3f) / 4f
 
         for (index in 0 until 4) {
             drawRoundRect(
                 color = if (index < filledBars) fillColor else emptyColor,
                 topLeft = Offset(innerLeft + index * (barWidth + gap), innerTop),
                 size = Size(barWidth, innerHeight),
-                cornerRadius = CornerRadius(with(density) { 2.dp.toPx() }, with(density) { 2.dp.toPx() }),
+                cornerRadius = CornerRadius(with(density) { 1.5.dp.toPx() }, with(density) { 1.5.dp.toPx() }),
             )
         }
 

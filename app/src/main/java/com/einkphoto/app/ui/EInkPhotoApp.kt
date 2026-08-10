@@ -12,9 +12,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -26,6 +30,7 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -49,6 +54,7 @@ import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.feature.settings.network.LanNetworkRepository
 import com.einkphoto.app.feature.settings.storage.LanStorageRepository
 import com.einkphoto.app.feature.settings.power.LanPowerRepository
+import com.einkphoto.app.feature.settings.power.PowerSnapshot
 import com.einkphoto.app.ui.components.DeviceConnectionBadge
 import com.einkphoto.app.ui.components.FrameBatteryIcon
 import com.einkphoto.app.ui.localalbum.LocalAlbumDemoHost
@@ -198,23 +204,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         topBar = {
             Column {
                 CenterAlignedTopAppBar(
-                    title = {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (snapshot.connection == DeviceConnectionState.Online && powerSnapshot.batteryPresent) {
-                                FrameBatteryIcon(
-                                    percent = powerSnapshot.batteryPercent,
-                                    charging = powerSnapshot.charging,
-                                    full = powerSnapshot.chargerState == "completed",
-                                )
-                                Text(
-                                    text = powerSnapshot.batteryPercent?.let { "$it%" } ?: "--",
-                                    style = MaterialTheme.typography.labelMedium,
-                                    modifier = Modifier.padding(start = 4.dp, end = 10.dp),
-                                )
-                            }
-                            Text("墨水屏相册", style = MaterialTheme.typography.titleMedium)
-                        }
-                    },
+                    title = { Text("墨水屏相册", style = MaterialTheme.typography.titleMedium) },
                     navigationIcon = {
                         if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showPowerSettings || showDeviceDiagnostics)) {
                             IconButton(onClick = {
@@ -227,12 +217,12 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                             }
                         }
                     },
-                    actions = { DeviceConnectionBadge(snapshot) },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
                         scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
                     ),
                 )
+                HeaderStatusBar(snapshot, powerSnapshot)
                 ModeSwitchGlobalStatus(modeSwitchState)
             }
         },
@@ -368,6 +358,64 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
             }
         }
     }
+}
+
+@Composable
+private fun HeaderStatusBar(snapshot: com.einkphoto.app.core.device.DeviceSnapshot, power: PowerSnapshot) {
+    val sleepLabel = sleepStatusText(snapshot.connection, power)
+    val sleepActive = power.automaticSleepEnabled || snapshot.connection == DeviceConnectionState.Sleeping
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 5.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            FrameBatteryIcon(
+                percent = power.batteryPercent,
+                charging = power.charging,
+                full = power.chargerState == "completed",
+            )
+            Text(
+                text = power.batteryPercent?.let { "$it%" } ?: "--",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Surface(
+            color = if (sleepActive) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+            contentColor = if (sleepActive) MaterialTheme.colorScheme.primary
+            else MaterialTheme.colorScheme.onSurfaceVariant,
+            shape = CircleShape,
+        ) {
+            Text(
+                text = sleepLabel,
+                style = MaterialTheme.typography.labelSmall,
+                modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
+            )
+        }
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+            DeviceConnectionBadge(snapshot)
+        }
+    }
+}
+
+private fun sleepStatusText(connection: DeviceConnectionState, power: PowerSnapshot): String = when {
+    connection == DeviceConnectionState.Sleeping -> "休眠中"
+    connection != DeviceConnectionState.Online && power.automaticSleepEnabled &&
+        power.idleSleepAtEpochMillis?.let { System.currentTimeMillis() >= it } == true -> "休眠中"
+    connection != DeviceConnectionState.Online && !power.pmicOnline -> "休眠未知"
+    !power.automaticSleepEnabled -> "休眠关闭"
+    power.automaticSleepState == "busy" -> "任务运行中"
+    power.automaticSleepState == "waiting_idle" -> "等待休眠"
+    power.automaticSleepState == "ready_to_sleep" -> "即将休眠"
+    power.automaticSleepState == "playback_due" -> "轮播唤醒"
+    power.automaticSleepState == "rtc_unavailable" -> "RTC 异常"
+    else -> "自动休眠"
 }
 
 private fun DeviceFeature.destination(): AppDestination = when (this) {

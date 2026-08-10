@@ -47,6 +47,12 @@ import com.einkphoto.app.core.device.DeviceSnapshot
 @Composable
 fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifier) {
     val connected = snapshot.connection == DeviceConnectionState.Online
+    val label = when (snapshot.connection) {
+        DeviceConnectionState.Online -> "已连接"
+        DeviceConnectionState.Connecting, DeviceConnectionState.Reconnecting -> "连接中"
+        DeviceConnectionState.Sleeping -> "休眠中"
+        DeviceConnectionState.Offline -> "未连接"
+    }
     val transition = rememberInfiniteTransition(label = "device-connection-breathing")
     val animatedScale = transition.animateFloat(
         initialValue = 0.74f,
@@ -68,17 +74,17 @@ fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifie
     ).value
     val pulseScale = if (connected) animatedScale else 1f
     val pulseAlpha = if (connected) animatedAlpha else 1f
-    val dotColor = if (connected) MaterialTheme.appSemanticColors.success else MaterialTheme.colorScheme.error
+    val dotColor = if (connected) MaterialTheme.appSemanticColors.success else MaterialTheme.colorScheme.onSurfaceVariant
     Surface(
-        modifier = modifier.padding(end = 8.dp),
-        color = if (connected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer,
-        contentColor = if (connected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onErrorContainer,
+        modifier = modifier,
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         shape = CircleShape,
     ) {
         Row(
             modifier = Modifier
-                .padding(horizontal = 10.dp, vertical = 7.dp)
-                .semantics { contentDescription = if (connected) "相框已连接" else "相框未连接" },
+                .padding(horizontal = 9.dp, vertical = 6.dp)
+                .semantics { contentDescription = "相框$label" },
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
@@ -90,7 +96,7 @@ fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifie
             ) {
                 drawCircle(color = dotColor)
             }
-            Text(if (connected) "已连接" else "未连接", style = MaterialTheme.typography.labelMedium)
+            Text(label, style = MaterialTheme.typography.labelSmall)
         }
     }
 }
