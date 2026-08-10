@@ -1,58 +1,83 @@
 package com.einkphoto.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.LocalIndication
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import com.einkphoto.app.ui.components.rememberApplePressIndication
 
 private val LightColors = lightColorScheme(
-    primary = Rose40,
+    primary = RoseAccent,
     onPrimary = Color.White,
-    primaryContainer = Rose90,
-    onPrimaryContainer = Rose10,
-    secondary = Plum40,
+    primaryContainer = RoseTint,
+    onPrimaryContainer = AppleText,
+    secondary = AppleTextSecondary,
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFFE9DDFF),
-    onSecondaryContainer = Color(0xFF21133D),
-    background = Paper98,
-    onBackground = Ink10,
-    surface = Paper96,
-    onSurface = Ink10,
-    surfaceVariant = Color(0xFFF6E8ED),
-    onSurfaceVariant = Color(0xFF564149),
-    outline = OutlineLight,
-    error = Color(0xFFBA1A1A),
+    secondaryContainer = AppleTrack,
+    onSecondaryContainer = AppleText,
+    tertiary = RoseAccent,
+    onTertiary = Color.White,
+    background = AppleGround,
+    onBackground = AppleText,
+    surface = AppleSurface,
+    onSurface = AppleText,
+    surfaceVariant = AppleSurfaceSoft,
+    onSurfaceVariant = AppleTextSecondary,
+    surfaceTint = Color.Transparent,
+    surfaceBright = AppleSurface,
+    surfaceDim = AppleTrack,
+    surfaceContainerLowest = AppleSurface,
+    surfaceContainerLow = AppleSurface,
+    surfaceContainer = AppleSurface,
+    surfaceContainerHigh = AppleSurface,
+    surfaceContainerHighest = AppleSurface,
+    outline = AppleOutline,
+    outlineVariant = AppleHairline,
+    error = Color(0xFFD70015),
     onError = Color.White,
-    errorContainer = Color(0xFFFFDAD6),
-    onErrorContainer = Color(0xFF410002),
+    errorContainer = Color(0xFFFFE5E5),
+    onErrorContainer = Color(0xFF68000A),
+    scrim = Color.Black,
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Rose80,
-    onPrimary = Color(0xFF5E1137),
-    primaryContainer = Color(0xFF82234F),
-    onPrimaryContainer = Rose90,
-    secondary = Plum80,
-    onSecondary = Color(0xFF382D5D),
-    secondaryContainer = Color(0xFF504573),
-    onSecondaryContainer = Color(0xFFE9DDFF),
-    background = Night06,
-    onBackground = Ink90,
-    surface = Night12,
-    onSurface = Ink90,
-    surfaceVariant = Color(0xFF4B3840),
-    onSurfaceVariant = Color(0xFFD8C0C8),
-    outline = OutlineDark,
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    errorContainer = Color(0xFF93000A),
+    primary = RoseAccentDark,
+    onPrimary = Color(0xFF4A1028),
+    primaryContainer = RoseTintDark,
+    onPrimaryContainer = Color(0xFFFFD9E7),
+    secondary = AppleNightTextSecondary,
+    onSecondary = Color.Black,
+    secondaryContainer = AppleNightSurfaceSoft,
+    onSecondaryContainer = AppleNightText,
+    tertiary = RoseAccentDark,
+    onTertiary = Color(0xFF4A1028),
+    background = AppleNightGround,
+    onBackground = AppleNightText,
+    surface = AppleNightSurface,
+    onSurface = AppleNightText,
+    surfaceVariant = AppleNightSurfaceSoft,
+    onSurfaceVariant = AppleNightTextSecondary,
+    surfaceTint = Color.Transparent,
+    surfaceBright = AppleNightSurfaceSoft,
+    surfaceDim = AppleNightGround,
+    surfaceContainerLowest = AppleNightGround,
+    surfaceContainerLow = AppleNightSurface,
+    surfaceContainer = AppleNightSurface,
+    surfaceContainerHigh = AppleNightSurfaceSoft,
+    surfaceContainerHighest = AppleNightOutline,
+    outline = AppleNightOutline,
+    outlineVariant = Color(0x24FFFFFF),
+    error = Color(0xFFFF6961),
+    onError = Color(0xFF5D0005),
+    errorContainer = Color(0xFF7A0010),
     onErrorContainer = Color(0xFFFFDAD6),
+    scrim = Color.Black,
 )
 
 @Immutable
@@ -65,16 +90,25 @@ data class AppSemanticColors(
     val warningContainer: Color,
 )
 
-private val LocalSemanticColors = staticCompositionLocalOf {
-    AppSemanticColors(
-        success = SuccessLight,
-        onSuccessContainer = Color(0xFF052112),
-        successContainer = Color(0xFFB7F2C8),
-        warning = WarningLight,
-        onWarningContainer = Color(0xFF291800),
-        warningContainer = Color(0xFFFFDFA6),
-    )
-}
+private val LightSemanticColors = AppSemanticColors(
+    success = SuccessLight,
+    onSuccessContainer = Color(0xFF0A3215),
+    successContainer = Color(0xFFE7F7EB),
+    warning = WarningLight,
+    onWarningContainer = Color(0xFF3A2800),
+    warningContainer = Color(0xFFFFF4D6),
+)
+
+private val DarkSemanticColors = AppSemanticColors(
+    success = SuccessDark,
+    onSuccessContainer = Color(0xFFD1FFDB),
+    successContainer = Color(0xFF123D22),
+    warning = WarningDark,
+    onWarningContainer = Color(0xFFFFF1B8),
+    warningContainer = Color(0xFF503F00),
+)
+
+private val LocalSemanticColors = staticCompositionLocalOf { LightSemanticColors }
 
 val MaterialTheme.appSemanticColors: AppSemanticColors
     @Composable get() = LocalSemanticColors.current
@@ -84,25 +118,9 @@ fun EInkPhotoTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val semanticColors = if (darkTheme) {
-        AppSemanticColors(
-            success = SuccessDark,
-            onSuccessContainer = Color(0xFFD1FFDB),
-            successContainer = Color(0xFF174E30),
-            warning = WarningDark,
-            onWarningContainer = Color(0xFFFFE0AA),
-            warningContainer = Color(0xFF5F3C00),
-        )
-    } else {
-        LocalSemanticColors.current
-    }
-    // The default state layer is too subtle on the app's pale pink cards.
-    // One stronger pink ripple makes every Material button and navigation item
-    // acknowledge a tap without changing each screen independently.
-    val pressIndication = ripple(color = if (darkTheme) Rose80 else Rose40)
-
-    androidx.compose.runtime.CompositionLocalProvider(
-        LocalSemanticColors provides semanticColors,
+    val pressIndication = rememberApplePressIndication(if (darkTheme) RoseAccentDark else RoseAccent)
+    CompositionLocalProvider(
+        LocalSemanticColors provides if (darkTheme) DarkSemanticColors else LightSemanticColors,
         LocalIndication provides pressIndication,
     ) {
         MaterialTheme(

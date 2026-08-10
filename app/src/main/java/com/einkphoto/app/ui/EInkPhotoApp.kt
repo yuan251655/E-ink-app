@@ -1,6 +1,16 @@
 package com.einkphoto.app.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
@@ -27,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
@@ -200,7 +212,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                                     modifier = Modifier.padding(start = 4.dp, end = 10.dp),
                                 )
                             }
-                            Text("墨水屏相册")
+                            Text("墨水屏相册", style = MaterialTheme.typography.titleMedium)
                         }
                     },
                     navigationIcon = {
@@ -216,16 +228,31 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                         }
                     },
                     actions = { DeviceConnectionBadge(snapshot) },
-                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                    colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                        scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                    ),
                 )
                 ModeSwitchGlobalStatus(modeSwitchState)
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+            NavigationBar(
+                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
+                tonalElevation = 0.dp,
+            ) {
                 AppDestination.entries.forEach { destination ->
+                    val isSelected = selected == destination
+                    val iconScale by animateFloatAsState(
+                        targetValue = if (isSelected) 1.08f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioNoBouncy,
+                            stiffness = Spring.StiffnessMedium,
+                        ),
+                        label = "${destination.name}-icon-scale",
+                    )
                     NavigationBarItem(
-                        selected = selected == destination,
+                        selected = isSelected,
                         onClick = {
                             // A bottom-tab selection always enters the settings home.
                             // This prevents a previously opened sub-page from being
@@ -236,21 +263,47 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                             showDeviceDiagnostics = false
                             onDestinationSelected(destination)
                         },
-                        icon = { androidx.compose.material3.Icon(if (selected == destination) destination.selectedIcon else destination.icon, null) },
+                        icon = {
+                            Icon(
+                                if (isSelected) destination.selectedIcon else destination.icon,
+                                contentDescription = destination.title,
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                },
+                            )
+                        },
                         label = { Text(destination.title) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
+                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        ),
                     )
                 }
             }
         },
     ) { padding ->
-        when (selected) {
-            AppDestination.LocalAlbum -> LocalAlbumDemoHost(
+        AnimatedContent(
+            targetState = selected,
+            modifier = Modifier.fillMaxSize(),
+            transitionSpec = {
+                val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
+                (fadeIn(tween(180)) + slideInHorizontally(tween(320)) { direction * it / 10 }) togetherWith
+                    (fadeOut(tween(140)) + slideOutHorizontally(tween(240)) { -direction * it / 12 })
+            },
+            label = "main-destination",
+        ) { destination ->
+            when (destination) {
+                AppDestination.LocalAlbum -> LocalAlbumDemoHost(
                 contentPadding = padding,
                 runtime = localAlbumRuntime,
                 modeSwitchState = modeSwitchState,
                 onSwitchMode = modeSwitchViewModel::switchTo,
             )
-            AppDestination.AiAlbum -> AiAlbumHost(
+                AppDestination.AiAlbum -> AiAlbumHost(
                 device = snapshot,
                 modeSwitchState = modeSwitchState,
                 onSwitchMode = modeSwitchViewModel::switchTo,
@@ -288,7 +341,7 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onClearAiHistory = aiGenerationViewModel::clearHistory,
                 contentPadding = padding,
             )
-            AppDestination.Settings -> NetworkSettingsScreen(
+                AppDestination.Settings -> NetworkSettingsScreen(
                 repository = networkRepository,
                 contentPadding = padding,
                 showNetworkConfiguration = showNetworkConfiguration,
@@ -306,12 +359,13 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onCloseAppUpdate = { showAppUpdate = false },
                 deviceSnapshot = snapshot,
             )
-            AppDestination.Dashboard -> InfoDashboardHost(
+                AppDestination.Dashboard -> InfoDashboardHost(
                 contentPadding = padding,
                 device = snapshot,
                 modeSwitchState = modeSwitchState,
                 onSwitchMode = modeSwitchViewModel::switchTo,
             )
+            }
         }
     }
 }

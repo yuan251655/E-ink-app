@@ -1,6 +1,7 @@
 package com.einkphoto.app.ui.aialbum
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Collections
 import androidx.compose.material.icons.outlined.Image
@@ -34,6 +36,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Text
@@ -91,6 +94,7 @@ import com.einkphoto.app.ui.components.DeviceConnectionBadge
 import com.einkphoto.app.ui.components.crossFeatureDisplayText
 import com.einkphoto.app.ui.components.modeCoverDrawableRes
 import com.einkphoto.app.ui.components.pressFeedbackClickable
+import com.einkphoto.app.ui.components.hierarchicalPageTransition
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -119,6 +123,20 @@ internal fun aiBackDestination(current: AiAlbumRoute): AiAlbumRoute = when (curr
     AiAlbumRoute.StyleDetail -> AiAlbumRoute.StyleGallery
     AiAlbumRoute.StyleGallery -> AiAlbumRoute.Home
     else -> AiAlbumRoute.Home
+}
+
+private fun aiRouteDepth(route: AiAlbumRoute): Int = when (route) {
+    AiAlbumRoute.Home -> 0
+    AiAlbumRoute.Images,
+    AiAlbumRoute.ModelConfig,
+    AiAlbumRoute.StyleGallery,
+    AiAlbumRoute.Playback -> 1
+    AiAlbumRoute.ImageDetail,
+    AiAlbumRoute.ModelEditor,
+    AiAlbumRoute.ModelSwitch,
+    AiAlbumRoute.StyleDetail -> 2
+    AiAlbumRoute.Create,
+    AiAlbumRoute.ModelTutorial -> 3
 }
 
 internal enum class AiCurrentDisplayPresentation {
@@ -238,7 +256,14 @@ fun AiAlbumHost(
         if (route in setOf(AiAlbumRoute.Home, AiAlbumRoute.Playback) && device.connection == DeviceConnectionState.Online) onRefreshAiPlayback()
     }
     BackHandler(enabled = route != AiAlbumRoute.Home, onBack = back)
-    if (route == AiAlbumRoute.Home) {
+    AnimatedContent(
+        targetState = route,
+        transitionSpec = {
+            hierarchicalPageTransition(aiRouteDepth(targetState) > aiRouteDepth(initialState))
+        },
+        label = "ai-album-page",
+    ) { displayedRoute ->
+    if (displayedRoute == AiAlbumRoute.Home) {
         AiAlbumHomeScreen(
             device = device,
             aiImages = runtimeAiImages,
@@ -257,7 +282,7 @@ fun AiAlbumHost(
             listState = homeListState,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.Images) {
+    } else if (displayedRoute == AiAlbumRoute.Images) {
         AiImageLibraryScreen(
             state = aiImageState,
             currentContent = device.currentContent,
@@ -277,7 +302,7 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.ImageDetail) {
+    } else if (displayedRoute == AiAlbumRoute.ImageDetail) {
         AiImageDetailScreen(
             image = filterAiImageRecords(runtimeAiImages).firstOrNull { it.id == selectedAiImageId },
             currentContent = device.currentContent,
@@ -292,7 +317,7 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.ModelConfig) {
+    } else if (displayedRoute == AiAlbumRoute.ModelConfig) {
         AiModelManagerScreen(
             configured = aiConfigUiState.configuration.configured,
             activeName = aiConfigUiState.configuration.profileName.ifBlank { aiConfigUiState.configuration.imageModel },
@@ -305,7 +330,7 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.ModelEditor) {
+    } else if (displayedRoute == AiAlbumRoute.ModelEditor) {
         val profile = aiConfigUiState.profiles.firstOrNull { it.id == editingModelId }
         val editorSnapshot = when {
             profile != null -> AiConfigSnapshot(
@@ -355,7 +380,7 @@ fun AiAlbumHost(
                 modifier = modifier,
             )
         }
-    } else if (route == AiAlbumRoute.ModelSwitch) {
+    } else if (displayedRoute == AiAlbumRoute.ModelSwitch) {
         AiModelSwitchScreen(
             profiles = aiConfigUiState.profiles,
             profilesAvailable = aiConfigUiState.profilesAvailable,
@@ -366,7 +391,7 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.Create) {
+    } else if (displayedRoute == AiAlbumRoute.Create) {
         AiGenerationChatScreen(
             state = aiGenerationUiState,
             onGenerate = onGenerateAiImage,
@@ -382,7 +407,7 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.StyleGallery) {
+    } else if (displayedRoute == AiAlbumRoute.StyleGallery) {
         PhotoStyleGalleryScreen(
             onBack = back,
             onSelect = { preset ->
@@ -392,7 +417,7 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.StyleDetail) {
+    } else if (displayedRoute == AiAlbumRoute.StyleDetail) {
         val preset = PhotoStyleCatalog.presets.firstOrNull { it.id == selectedPhotoStyleId }
         if (preset == null) {
             routeName = AiAlbumRoute.StyleGallery.name
@@ -409,7 +434,7 @@ fun AiAlbumHost(
                 modifier = modifier,
             )
         }
-    } else if (route == AiAlbumRoute.ModelTutorial) {
+    } else if (displayedRoute == AiAlbumRoute.ModelTutorial) {
         AiModelTutorialScreen(
             currentStep = tutorialCurrentStep,
             completedSteps = tutorialCompletedSteps.toSet(),
@@ -420,10 +445,11 @@ fun AiAlbumHost(
             contentPadding = contentPadding,
             modifier = modifier,
         )
-    } else if (route == AiAlbumRoute.Playback) {
+    } else if (displayedRoute == AiAlbumRoute.Playback) {
         AiPlaybackSettingsScreen(aiPlayback, onSaveAiPlayback, back, contentPadding, modifier)
     } else {
-        AiAlbumSubpageSkeleton(route, back, contentPadding, modifier)
+        AiAlbumSubpageSkeleton(displayedRoute, back, contentPadding, modifier)
+    }
     }
 }
 
@@ -480,23 +506,24 @@ private fun AiAlbumHomeScreen(
                 )
             }
             item {
-                Button(
-                    onClick = { onNavigate(AiAlbumRoute.Create) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 ) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text("创建图片")
-                }
-            }
-            item {
-                Button(
-                    onClick = { onNavigate(AiAlbumRoute.StyleGallery) },
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                ) {
-                    Icon(Icons.Outlined.AutoAwesome, contentDescription = null)
-                    Spacer(Modifier.size(8.dp))
-                    Text("照片风格转换")
+                    AiPrimaryActionRow(
+                        title = "创建图片",
+                        detail = "用文字生成一张新的 AI 图片",
+                        onClick = { onNavigate(AiAlbumRoute.Create) },
+                    )
+                    HorizontalDivider(
+                        modifier = Modifier.padding(start = 76.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant,
+                    )
+                    AiPrimaryActionRow(
+                        title = "照片风格转换",
+                        detail = "导入照片并选择一种艺术风格",
+                        onClick = { onNavigate(AiAlbumRoute.StyleGallery) },
+                    )
                 }
             }
             item {
@@ -524,6 +551,35 @@ private fun AiAlbumHomeScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun AiPrimaryActionRow(
+    title: String,
+    detail: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 76.dp).pressFeedbackClickable(role = Role.Button, onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Box(
+            Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outline,
+        )
     }
 }
 

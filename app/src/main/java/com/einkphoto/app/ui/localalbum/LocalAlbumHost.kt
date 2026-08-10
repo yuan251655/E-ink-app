@@ -10,6 +10,7 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
@@ -40,6 +41,7 @@ import com.einkphoto.app.feature.localalbum.data.LocalDraftRequest
 import com.einkphoto.app.feature.localalbum.data.createLocalDraft
 import com.einkphoto.app.feature.localalbum.model.AfterDisplay
 import com.einkphoto.app.feature.localalbum.model.PhoneSource
+import com.einkphoto.app.ui.components.hierarchicalPageTransition
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
 import java.io.File
 import kotlinx.coroutines.launch
@@ -49,6 +51,11 @@ import kotlinx.coroutines.withContext
 data class LocalAlbumDemoRuntime(
     val viewModel: LocalAlbumViewModel,
     val demoController: DemoLocalAlbumController?,
+)
+
+private data class LocalAlbumAnimatedPage(
+    val route: LocalAlbumRoute,
+    val depth: Int,
 )
 
 @Composable
@@ -89,7 +96,12 @@ fun LocalAlbumHost(
     BackHandler(enabled = backStack.size > 1, onBack = back)
 
     Box(modifier.fillMaxSize().padding(contentPadding)) {
-        when (route) {
+        AnimatedContent(
+            targetState = LocalAlbumAnimatedPage(route, backStack.size),
+            transitionSpec = { hierarchicalPageTransition(targetState.depth > initialState.depth) },
+            label = "local-album-page",
+        ) { page ->
+            when (page.route) {
             LocalAlbumRoute.Overview -> LocalAlbumOverviewScreen(
                 state = state,
                 viewModel = viewModel,
@@ -212,7 +224,7 @@ fun LocalAlbumHost(
                 // a child route, so leaving it as the root would make its back arrow a no-op.
                 onDone = backToOverview,
             )
-            is LocalAlbumRoute.Detail -> state.media.firstOrNull { it.id == route.mediaId }?.let { media ->
+            is LocalAlbumRoute.Detail -> state.media.firstOrNull { it.id == page.route.mediaId }?.let { media ->
                 MediaDetailScreen(
                     state = state,
                     media = media,
@@ -232,6 +244,7 @@ fun LocalAlbumHost(
             }
             LocalAlbumRoute.Playback -> PlaybackSettingsScreen(state, viewModel, back)
             LocalAlbumRoute.Batch -> BatchManageScreen(state, viewModel, back)
+            }
         }
     }
 }

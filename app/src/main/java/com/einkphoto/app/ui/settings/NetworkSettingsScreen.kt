@@ -5,18 +5,22 @@ import android.content.pm.PackageManager
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -34,6 +38,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.BatteryChargingFull
 import androidx.compose.material.icons.outlined.FolderOpen
@@ -60,8 +65,11 @@ import com.einkphoto.app.feature.settings.diagnostics.LanDeviceLogRepository
 import com.einkphoto.app.feature.settings.power.PowerRepository
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.ui.components.pressFeedbackClickable
+import com.einkphoto.app.ui.components.hierarchicalPageTransition
 import com.einkphoto.app.feature.aialbum.VoiceGenerationServiceController
 import kotlinx.coroutines.launch
+
+private enum class SettingsPage { Home, Network, Storage, Power, Diagnostics, Update }
 
 /** Settings home keeps future features as entries; network configuration is the first complete sub-page. */
 @Composable
@@ -83,12 +91,30 @@ fun NetworkSettingsScreen(
     onCloseAppUpdate: () -> Unit,
     deviceSnapshot: DeviceSnapshot,
 ) {
-    if (showNetworkConfiguration) NetworkConfigurationPage(repository, contentPadding)
-    else if (showStorageManagement) StorageManagementPage(storageRepository, contentPadding)
-    else if (showPowerSettings) PowerSettingsScreen(powerRepository, contentPadding)
-    else if (showDeviceDiagnostics) DeviceDiagnosticsPage(repository, storageRepository, deviceSnapshot, contentPadding)
-    else if (showAppUpdate) AppUpdateScreen(onCloseAppUpdate, contentPadding)
-    else SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenPowerSettings, onOpenDeviceDiagnostics, onOpenAppUpdate)
+    val page = when {
+        showNetworkConfiguration -> SettingsPage.Network
+        showStorageManagement -> SettingsPage.Storage
+        showPowerSettings -> SettingsPage.Power
+        showDeviceDiagnostics -> SettingsPage.Diagnostics
+        showAppUpdate -> SettingsPage.Update
+        else -> SettingsPage.Home
+    }
+    AnimatedContent(
+        targetState = page,
+        transitionSpec = {
+            hierarchicalPageTransition(initialState == SettingsPage.Home && targetState != SettingsPage.Home)
+        },
+        label = "settings-page",
+    ) { displayedPage ->
+        when (displayedPage) {
+            SettingsPage.Network -> NetworkConfigurationPage(repository, contentPadding)
+            SettingsPage.Storage -> StorageManagementPage(storageRepository, contentPadding)
+            SettingsPage.Power -> PowerSettingsScreen(powerRepository, contentPadding)
+            SettingsPage.Diagnostics -> DeviceDiagnosticsPage(repository, storageRepository, deviceSnapshot, contentPadding)
+            SettingsPage.Update -> AppUpdateScreen(onCloseAppUpdate, contentPadding)
+            SettingsPage.Home -> SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenPowerSettings, onOpenDeviceDiagnostics, onOpenAppUpdate)
+        }
+    }
 }
 
 @Composable
@@ -111,82 +137,100 @@ private fun SettingsHome(
         }
     }
     LaunchedEffect(repository) { repository.refresh() }
-    Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("设置", style = MaterialTheme.typography.headlineSmall)
-        Text("设备管理", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenNetwork)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("网络配置", style = MaterialTheme.typography.titleMedium)
-                Text("管理相框热点与家庭 Wi-Fi", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("${if (state.deviceId == "unknown") "相框暂未连接" else "相框已连接"}  ·  ${if (state.sta.state == StaState.Connected) "Wi-Fi 已连接" else "Wi-Fi 未连接"}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                state.sta.ssid?.let { Text("${it}${state.sta.ip?.let { ip -> "  ·  $ip" } ?: ""}", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-        }
-        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenStorageManagement)) {
-            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(Icons.Outlined.SdCard, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("TF 卡管理", style = MaterialTheme.typography.titleMedium)
-                    Text("查看存储状态、空间信息和设备维护", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenPowerSettings)) {
-            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(Icons.Outlined.BatteryChargingFull, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("电池、电源与休眠", style = MaterialTheme.typography.titleMedium)
-                    Text("查看主电池、USB 充电和休眠设置", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenDeviceDiagnostics)) {
-            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("设备诊断", style = MaterialTheme.typography.titleMedium)
-                    Text("查看设备、网络、TF 卡和显示状态", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-            }
-        }
-        Card(Modifier.fillMaxWidth()) {
-            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(Icons.Outlined.RecordVoiceOver, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("语音生图服务", style = MaterialTheme.typography.titleMedium)
-                    Text("允许小智确认后由手机后台生成，并保存到 AI 相册", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(if (voiceServiceEnabled) "已开启" else "未开启", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(
-                    checked = voiceServiceEnabled,
-                    onCheckedChange = { enabled ->
-                        if (!enabled) {
-                            VoiceGenerationServiceController.setEnabled(context, false)
-                            voiceServiceEnabled = false
-                        } else if (Build.VERSION.SDK_INT >= 33 &&
-                            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-                        ) {
-                            notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-                        } else {
-                            VoiceGenerationServiceController.setEnabled(context, true)
-                            voiceServiceEnabled = true
-                        }
-                    },
+    Column(
+        Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+    ) {
+        Text("设置", style = MaterialTheme.typography.headlineLarge)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("设备", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                SettingsLinkRow(
+                    title = "网络配置",
+                    subtitle = "管理相框热点与家庭 Wi-Fi",
+                    status = "${if (state.deviceId == "unknown") "相框暂未连接" else "相框已连接"} · ${if (state.sta.state == StaState.Connected) "Wi-Fi 已连接" else "Wi-Fi 未连接"}",
+                    onClick = onOpenNetwork,
                 )
+                SettingsDivider()
+                SettingsLinkRow("TF 卡管理", "查看存储状态、空间信息和设备维护", onClick = onOpenStorageManagement)
+                SettingsDivider()
+                SettingsLinkRow("电池、电源与休眠", "查看主电池、USB 充电和休眠设置", onClick = onOpenPowerSettings)
+                SettingsDivider()
+                SettingsLinkRow("设备诊断", "查看设备、网络、TF 卡和显示状态", onClick = onOpenDeviceDiagnostics)
             }
         }
-        Card(Modifier.fillMaxWidth().pressFeedbackClickable(onClick = onOpenAppUpdate)) {
-            Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Icon(Icons.Outlined.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("应用更新", style = MaterialTheme.typography.titleMedium)
-                    Text("检查并安装最新版本的墨相框 App", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("语音与应用", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("语音生图服务", style = MaterialTheme.typography.titleMedium)
+                        Text("允许小智确认后由手机后台生成", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(
+                        checked = voiceServiceEnabled,
+                        onCheckedChange = { enabled ->
+                            if (!enabled) {
+                                VoiceGenerationServiceController.setEnabled(context, false)
+                                voiceServiceEnabled = false
+                            } else if (Build.VERSION.SDK_INT >= 33 &&
+                                ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+                            ) {
+                                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            } else {
+                                VoiceGenerationServiceController.setEnabled(context, true)
+                                voiceServiceEnabled = true
+                            }
+                        },
+                    )
                 }
+                SettingsDivider()
+                SettingsLinkRow("应用更新", "检查并安装最新版本的墨相框 App", onClick = onOpenAppUpdate)
             }
         }
-        Text("后续将在这里增加电源、轮播和系统设置。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+@Composable
+private fun SettingsLinkRow(
+    title: String,
+    subtitle: String,
+    status: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 72.dp).pressFeedbackClickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium)
+            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            status?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary) }
+        }
+        Icon(
+            Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.outline,
+        )
+    }
+}
+
+@Composable
+private fun SettingsDivider() = HorizontalDivider(
+    modifier = Modifier.padding(start = 16.dp),
+    color = MaterialTheme.colorScheme.outlineVariant,
+)
 
 @Composable
 private fun DeviceDiagnosticsPage(

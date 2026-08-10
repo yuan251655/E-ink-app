@@ -1,6 +1,7 @@
 package com.einkphoto.app.ui.dashboard
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -85,6 +86,7 @@ import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
 import com.einkphoto.app.ui.components.crossFeatureDisplayText
 import com.einkphoto.app.ui.components.modeCoverDrawableRes
+import com.einkphoto.app.ui.components.hierarchicalPageTransition
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
 import kotlinx.coroutines.launch
 
@@ -210,7 +212,16 @@ fun InfoDashboardHost(
     BackHandler(enabled = route != DashboardRoute.Overview) { route = DashboardRoute.Overview }
 
     Box(modifier = modifier.fillMaxSize().padding(contentPadding)) {
-        when (route) {
+        AnimatedContent(
+            targetState = route,
+            transitionSpec = {
+                hierarchicalPageTransition(
+                    initialState == DashboardRoute.Overview && targetState != DashboardRoute.Overview,
+                )
+            },
+            label = "dashboard-page",
+        ) { displayedRoute ->
+        when (displayedRoute) {
             DashboardRoute.Overview -> DashboardOverviewScreen(
                 device = device,
                 modeSwitchState = modeSwitchState,
@@ -289,6 +300,7 @@ fun InfoDashboardHost(
                     saveDashboard()
                 },
             )
+        }
         }
     }
 }

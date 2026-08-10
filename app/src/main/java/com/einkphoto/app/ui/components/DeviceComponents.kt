@@ -7,6 +7,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -67,12 +68,12 @@ fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifie
     ).value
     val pulseScale = if (connected) animatedScale else 1f
     val pulseAlpha = if (connected) animatedAlpha else 1f
-    val badgeColor = if (connected) MaterialTheme.appSemanticColors.success else MaterialTheme.colorScheme.onErrorContainer
+    val dotColor = if (connected) MaterialTheme.appSemanticColors.success else MaterialTheme.colorScheme.error
     Surface(
         modifier = modifier.padding(end = 8.dp),
-        color = if (connected) MaterialTheme.appSemanticColors.success.copy(alpha = 0.15f) else MaterialTheme.colorScheme.errorContainer,
-        contentColor = badgeColor,
-        shape = MaterialTheme.shapes.small,
+        color = if (connected) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.errorContainer,
+        contentColor = if (connected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onErrorContainer,
+        shape = CircleShape,
     ) {
         Row(
             modifier = Modifier
@@ -87,7 +88,7 @@ fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifie
                     .scale(pulseScale)
                     .alpha(pulseAlpha),
             ) {
-                drawCircle(color = badgeColor)
+                drawCircle(color = dotColor)
             }
             Text(if (connected) "已连接" else "未连接", style = MaterialTheme.typography.labelMedium)
         }
