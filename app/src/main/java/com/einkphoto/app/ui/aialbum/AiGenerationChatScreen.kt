@@ -2,6 +2,7 @@ package com.einkphoto.app.ui.aialbum
 
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
@@ -129,6 +130,12 @@ internal fun AiGenerationChatScreen(
         AiGenerationPhase.GeneratingPreview,
         AiGenerationPhase.Saving,
     )
+    val composerCanCollapse = state.preview != null || state.history.isNotEmpty()
+
+    BackHandler(enabled = composerExpanded && composerCanCollapse) {
+        focusManager.clearFocus(force = true)
+        composerExpanded = false
+    }
 
     LaunchedEffect(state.historyId, state.phase, state.history.size) {
         if (state.historyId != null && state.history.isNotEmpty()) {
@@ -249,6 +256,11 @@ internal fun AiGenerationChatScreen(
             // collapsed so the conversation list remains the primary scrollable area.
             compact = (state.preview != null || state.history.isNotEmpty()) && !composerExpanded,
             onExpand = { composerExpanded = true },
+            canCollapse = composerCanCollapse,
+            onCollapse = {
+                focusManager.clearFocus(force = true)
+                composerExpanded = false
+            },
             onGenerate = {
                 focusManager.clearFocus(force = true)
                 onGenerate(draft)
@@ -626,6 +638,8 @@ private fun GenerationInputBar(
     enabled: Boolean,
     compact: Boolean,
     onExpand: () -> Unit,
+    canCollapse: Boolean,
+    onCollapse: () -> Unit,
     onGenerate: () -> Unit,
 ) {
     Card(
@@ -639,7 +653,12 @@ private fun GenerationInputBar(
                 Text("创作另一张图片")
             }
         } else Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("图片描述", style = MaterialTheme.typography.labelLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("图片描述", style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                if (canCollapse) {
+                    TextButton(onClick = onCollapse) { Text("收起") }
+                }
+            }
             TemplatePromptPicker(
                 templatesAvailable = promptTemplates.isNotEmpty(),
                 selectedCategory = selectedTemplateCategory,
