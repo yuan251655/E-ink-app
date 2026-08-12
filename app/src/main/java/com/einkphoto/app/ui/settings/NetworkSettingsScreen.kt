@@ -63,6 +63,7 @@ import com.einkphoto.app.feature.settings.storage.StorageRepository
 import com.einkphoto.app.feature.settings.storage.StorageSnapshot
 import com.einkphoto.app.feature.settings.diagnostics.LanDeviceLogRepository
 import com.einkphoto.app.feature.settings.power.PowerRepository
+import com.einkphoto.app.feature.settings.audio.AudioRepository
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.ui.components.pressFeedbackClickable
 import com.einkphoto.app.ui.components.hierarchicalPageTransition
@@ -70,7 +71,7 @@ import com.einkphoto.app.ui.components.AsyncButtonContent
 import com.einkphoto.app.feature.aialbum.VoiceGenerationServiceController
 import kotlinx.coroutines.launch
 
-private enum class SettingsPage { Home, Network, Storage, Power, Diagnostics, Update }
+private enum class SettingsPage { Home, Network, Storage, Power, Audio, Diagnostics, Update }
 
 /** Settings home keeps future features as entries; network configuration is the first complete sub-page. */
 @Composable
@@ -85,6 +86,9 @@ fun NetworkSettingsScreen(
     showPowerSettings: Boolean,
     onOpenPowerSettings: () -> Unit,
     powerRepository: PowerRepository,
+    showAudioSettings: Boolean,
+    onOpenAudioSettings: () -> Unit,
+    audioRepository: AudioRepository,
     showDeviceDiagnostics: Boolean,
     onOpenDeviceDiagnostics: () -> Unit,
     showAppUpdate: Boolean,
@@ -96,6 +100,7 @@ fun NetworkSettingsScreen(
         showNetworkConfiguration -> SettingsPage.Network
         showStorageManagement -> SettingsPage.Storage
         showPowerSettings -> SettingsPage.Power
+        showAudioSettings -> SettingsPage.Audio
         showDeviceDiagnostics -> SettingsPage.Diagnostics
         showAppUpdate -> SettingsPage.Update
         else -> SettingsPage.Home
@@ -111,9 +116,10 @@ fun NetworkSettingsScreen(
             SettingsPage.Network -> NetworkConfigurationPage(repository, contentPadding)
             SettingsPage.Storage -> StorageManagementPage(storageRepository, contentPadding)
             SettingsPage.Power -> PowerSettingsScreen(powerRepository, contentPadding)
+            SettingsPage.Audio -> AudioSettingsScreen(audioRepository, contentPadding)
             SettingsPage.Diagnostics -> DeviceDiagnosticsPage(repository, storageRepository, deviceSnapshot, contentPadding)
             SettingsPage.Update -> AppUpdateScreen(onCloseAppUpdate, contentPadding)
-            SettingsPage.Home -> SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenPowerSettings, onOpenDeviceDiagnostics, onOpenAppUpdate)
+            SettingsPage.Home -> SettingsHome(repository, contentPadding, onOpenNetworkConfiguration, onOpenStorageManagement, onOpenPowerSettings, onOpenAudioSettings, onOpenDeviceDiagnostics, onOpenAppUpdate)
         }
     }
 }
@@ -125,6 +131,7 @@ private fun SettingsHome(
     onOpenNetwork: () -> Unit,
     onOpenStorageManagement: () -> Unit,
     onOpenPowerSettings: () -> Unit,
+    onOpenAudioSettings: () -> Unit,
     onOpenDeviceDiagnostics: () -> Unit,
     onOpenAppUpdate: () -> Unit,
 ) {
@@ -169,6 +176,8 @@ private fun SettingsHome(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
+                SettingsLinkRow("音频与语音", "调节相框音量、静音和扬声器测试", onClick = onOpenAudioSettings)
+                SettingsDivider()
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,

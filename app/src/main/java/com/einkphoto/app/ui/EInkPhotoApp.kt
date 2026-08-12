@@ -80,6 +80,7 @@ import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.feature.settings.network.LanNetworkRepository
 import com.einkphoto.app.feature.settings.storage.LanStorageRepository
 import com.einkphoto.app.feature.settings.power.LanPowerRepository
+import com.einkphoto.app.feature.settings.audio.LanAudioRepository
 import com.einkphoto.app.feature.settings.power.PowerSnapshot
 import com.einkphoto.app.ui.components.DeviceConnectionBadge
 import com.einkphoto.app.ui.components.FrameBatteryIcon
@@ -221,10 +222,12 @@ private fun EInkPhotoAppContent(
     val networkRepository = remember { LanNetworkRepository() }
     val storageRepository = remember { LanStorageRepository() }
     val powerRepository = remember { LanPowerRepository() }
+    val audioRepository = remember { LanAudioRepository() }
     val powerSnapshot by powerRepository.snapshot.collectAsState()
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
     var showPowerSettings by rememberSaveable { mutableStateOf(false) }
+    var showAudioSettings by rememberSaveable { mutableStateOf(false) }
     var showDeviceDiagnostics by rememberSaveable { mutableStateOf(false) }
     var showAppUpdate by rememberSaveable { mutableStateOf(false) }
     var handledModeSwitchJob by rememberSaveable { mutableStateOf<String?>(null) }
@@ -271,13 +274,14 @@ private fun EInkPhotoAppContent(
     }
 
     val settingsDetailVisible = selected == AppDestination.Settings && (
-        showNetworkConfiguration || showStorageManagement || showPowerSettings ||
+        showNetworkConfiguration || showStorageManagement || showPowerSettings || showAudioSettings ||
             showDeviceDiagnostics || showAppUpdate
         )
     BackHandler(enabled = settingsDetailVisible) {
         showNetworkConfiguration = false
         showStorageManagement = false
         showPowerSettings = false
+        showAudioSettings = false
         showDeviceDiagnostics = false
         showAppUpdate = false
     }
@@ -337,6 +341,7 @@ private fun EInkPhotoAppContent(
                                 showNetworkConfiguration = false
                                 showStorageManagement = false
                                 showPowerSettings = false
+                                showAudioSettings = false
                                 showDeviceDiagnostics = false
                                 showAppUpdate = false
                             }) {
@@ -430,6 +435,9 @@ private fun EInkPhotoAppContent(
                 showPowerSettings = showPowerSettings,
                 onOpenPowerSettings = { showPowerSettings = true },
                 powerRepository = powerRepository,
+                showAudioSettings = showAudioSettings,
+                onOpenAudioSettings = { showAudioSettings = true },
+                audioRepository = audioRepository,
                 showDeviceDiagnostics = showDeviceDiagnostics,
                 onOpenDeviceDiagnostics = { showDeviceDiagnostics = true },
                 showAppUpdate = showAppUpdate,
@@ -452,6 +460,7 @@ private fun EInkPhotoAppContent(
                 showNetworkConfiguration = false
                 showStorageManagement = false
                 showPowerSettings = false
+                showAudioSettings = false
                 showDeviceDiagnostics = false
                 onDestinationSelected(destination)
             },
