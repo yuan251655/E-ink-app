@@ -680,10 +680,16 @@ private fun TemplatePromptPicker(
                     )
                 }
                 if (selectedCategory != null) {
-                    TextButton(
-                        onClick = { onChoose(selectedCategory, true) },
-                        enabled = enabled && templatesAvailable,
-                    ) { Text("换一条") }
+                    Row {
+                        TextButton(
+                            onClick = { onChoose(selectedCategory, true) },
+                            enabled = enabled && templatesAvailable,
+                        ) { Text("换一条") }
+                        TextButton(
+                            onClick = { showPicker = true },
+                            enabled = enabled && templatesAvailable,
+                        ) { Text("换主题") }
+                    }
                 } else {
                     TextButton(
                         onClick = { showPicker = true },
