@@ -129,7 +129,7 @@ sealed interface LanTransportResult<out T> {
 class LanDeviceSession(private val transport: LanDeviceTransport) : DeviceSession {
     private val mutex = Mutex()
     private val mutableSnapshot = MutableStateFlow(
-        DeviceSnapshot("unknown", "墨相框", false, DeviceConnectionState.Offline, DeviceFeature.LocalAlbum, false, null, null),
+        DeviceSnapshot("unknown", "相念", false, DeviceConnectionState.Offline, DeviceFeature.LocalAlbum, false, null, null),
     )
     override val snapshot: StateFlow<DeviceSnapshot> = mutableSnapshot.asStateFlow()
 

@@ -196,7 +196,7 @@ private fun SettingsHome(
                     )
                 }
                 SettingsDivider()
-                SettingsLinkRow("应用更新", "检查并安装最新版本的墨相框 App", onClick = onOpenAppUpdate)
+                SettingsLinkRow("应用更新", "检查并安装最新版本的相念 App", onClick = onOpenAppUpdate)
             }
         }
     }

@@ -12,9 +12,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <application
         android:allowBackup="true"
-        android:icon="@drawable/ic_app_icon"
-        android:label="墨相框"
-        android:roundIcon="@drawable/ic_app_icon"
+        android:icon="@mipmap/ic_launcher_xiangnian"
+        android:label="相念"
+        android:roundIcon="@mipmap/ic_launcher_xiangnian"
         android:usesCleartextTraffic="true"
         android:supportsRtl="true"
         android:theme="@style/Theme.EInkPhoto">

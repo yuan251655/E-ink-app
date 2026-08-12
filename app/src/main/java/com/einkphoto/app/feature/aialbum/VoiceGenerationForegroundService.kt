@@ -142,7 +142,7 @@ class VoiceGenerationForegroundService : Service() {
 
     private fun notification(text: String): Notification = NotificationCompat.Builder(this, channelId)
         .setSmallIcon(R.drawable.ic_app_icon)
-        .setContentTitle("墨相框语音生图")
+        .setContentTitle("相念语音生图")
         .setContentText(text)
         .setOngoing(true)
         .setOnlyAlertOnce(true)

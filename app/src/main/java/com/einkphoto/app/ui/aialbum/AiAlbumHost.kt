@@ -808,7 +808,7 @@ private fun AiAlbumSubpageSkeleton(route: AiAlbumRoute, onBack: () -> Unit, cont
 
 private fun previewDevice(content: DeviceCurrentContent) = DeviceSnapshot(
     deviceId = "preview",
-    displayName = "墨相框",
+    displayName = "相念",
     isDemo = true,
     connection = DeviceConnectionState.Online,
     activeFeature = content.ownerFeature,

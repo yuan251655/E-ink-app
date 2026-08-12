@@ -119,7 +119,7 @@ fun DemoDeviceCard(modifier: Modifier = Modifier) {
                         modifier = Modifier.size(28.dp),
                     )
                     Column(Modifier.padding(start = 12.dp)) {
-                        Text("客厅墨相框", style = MaterialTheme.typography.titleMedium)
+                        Text("客厅相念", style = MaterialTheme.typography.titleMedium)
                         Text(
                             "演示设备 · 数据仅用于界面预览",
                             style = MaterialTheme.typography.bodyMedium,

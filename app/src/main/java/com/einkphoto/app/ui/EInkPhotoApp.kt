@@ -8,6 +8,8 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -59,12 +61,16 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
@@ -103,12 +109,65 @@ import kotlinx.coroutines.delay
 @Composable
 fun EInkPhotoApp() = EInkPhotoTheme {
     var selected by rememberSaveable { mutableStateOf(AppDestination.LocalAlbum) }
-    EInkPhotoAppContent(selected) { selected = it }
+    var brandTransitionComplete by rememberSaveable { mutableStateOf(false) }
+    val brandProgress = remember { Animatable(if (brandTransitionComplete) 1f else 0f) }
+    Box(Modifier.fillMaxSize()) {
+        EInkPhotoAppContent(selected, brandTitleAlpha = if (brandTransitionComplete) 1f else 0f) { selected = it }
+        if (!brandTransitionComplete) BrandSplashScreen(brandProgress.value)
+    }
+    LaunchedEffect(brandTransitionComplete) {
+        if (!brandTransitionComplete) {
+            delay(1_100L)
+            brandProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(700, easing = CubicBezierEasing(0.32f, 0.72f, 0f, 1f)),
+            )
+            brandTransitionComplete = true
+        }
+    }
+}
+
+@Composable
+private fun BrandSplashScreen(progress: Float) {
+    val backgroundAlpha = (1f - ((progress - 0.12f) / 0.68f)).coerceIn(0f, 1f)
+    BoxWithConstraints(Modifier.fillMaxSize().zIndex(10f)) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background.copy(alpha = backgroundAlpha)))
+        val titleTravel = 52.dp - maxHeight / 2
+        Text(
+            text = "相念",
+            fontSize = (42f + (16f - 42f) * progress).sp,
+            lineHeight = (48f + (22f - 48f) * progress).sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onBackground,
+            letterSpacing = (8f + ((-0.15f) - 8f) * progress).sp,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = titleTravel * progress),
+        )
+        Text(
+            text = "因相而念，彼此相念。",
+            fontSize = 15.sp,
+            lineHeight = 24.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                alpha = 0.78f * (1f - progress / 0.42f).coerceIn(0f, 1f),
+            ),
+            fontFamily = FontFamily.Serif,
+            fontWeight = FontWeight.Normal,
+            letterSpacing = 2.sp,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .offset(y = 44.dp),
+        )
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected: (AppDestination) -> Unit) {
+private fun EInkPhotoAppContent(
+    selected: AppDestination,
+    brandTitleAlpha: Float = 1f,
+    onDestinationSelected: (AppDestination) -> Unit,
+) {
     val context = LocalContext.current
     val transport = remember { HttpLanDeviceTransport() }
     val session = remember(transport) { LanDeviceSession(transport) }
@@ -253,7 +312,25 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                         ),
                 ) {
                 CenterAlignedTopAppBar(
-                    title = { Text("墨水屏相册", style = MaterialTheme.typography.titleMedium) },
+                    title = {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.graphicsLayer { alpha = brandTitleAlpha },
+                        ) {
+                            Text(
+                                "相念",
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                            Text(
+                                "一帧静好，一念长久。",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontFamily = FontFamily.Serif,
+                                fontWeight = FontWeight.Normal,
+                                letterSpacing = 1.sp,
+                            )
+                        }
+                    },
                     navigationIcon = {
                         if (settingsDetailVisible) {
                             IconButton(onClick = {

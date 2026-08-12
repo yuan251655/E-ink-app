@@ -135,7 +135,7 @@ class FakeDeviceSession(
     private fun snapshotFor(scenario: FakeDeviceScenario): DeviceSnapshot {
         val base = DeviceSnapshot(
             deviceId = "fake-photopainter-001",
-            displayName = "客厅墨相框",
+            displayName = "客厅相念",
             isDemo = true,
             connection = DeviceConnectionState.Online,
             activeFeature = DeviceFeature.LocalAlbum,
