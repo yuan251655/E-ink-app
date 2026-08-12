@@ -3,6 +3,8 @@ package com.einkphoto.app.ui.aialbum
 import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -56,6 +58,8 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -95,6 +99,14 @@ internal fun AiGenerationChatScreen(
     contentPadding: PaddingValues,
     modifier: Modifier = Modifier,
 ) {
+    val haptic = LocalHapticFeedback.current
+    var previousPhase by rememberSaveable { mutableStateOf(state.phase) }
+    LaunchedEffect(state.phase) {
+        if (previousPhase != AiGenerationPhase.Saved && state.phase == AiGenerationPhase.Saved) {
+            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+        }
+        previousPhase = state.phase
+    }
     var draft by rememberSaveable { mutableStateOf("") }
     var expandedPreview by rememberSaveable { mutableStateOf(false) }
     var expandedHistoryPreview by rememberSaveable { mutableStateOf<AiGenerationPreview?>(null) }
@@ -742,19 +754,25 @@ private fun GenerationBitmap(
             runCatching { Uri.parse(preview.uri).path?.let(BitmapFactory::decodeFile) }.getOrNull()
         }
     }
-    if (bitmap == null) {
-        Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.size(8.dp))
-            Text("预览图暂不可用", color = MaterialTheme.colorScheme.onSecondaryContainer)
+    Crossfade(
+        targetState = bitmap,
+        animationSpec = tween(220),
+        label = "generation-preview-image",
+    ) { loadedBitmap ->
+        if (loadedBitmap == null) {
+            Column(modifier, horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Icon(Icons.Outlined.Image, contentDescription = null, modifier = Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.size(8.dp))
+                Text("预览图暂不可用", color = MaterialTheme.colorScheme.onSecondaryContainer)
+            }
+        } else {
+            Image(
+                bitmap = loadedBitmap.asImageBitmap(),
+                contentDescription = contentDescription,
+                modifier = modifier,
+                contentScale = contentScale,
+            )
         }
-    } else {
-        Image(
-            bitmap = bitmap!!.asImageBitmap(),
-            contentDescription = contentDescription,
-            modifier = modifier,
-            contentScale = contentScale,
-        )
     }
 }
 

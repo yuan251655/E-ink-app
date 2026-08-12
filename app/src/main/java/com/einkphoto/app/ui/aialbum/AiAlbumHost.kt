@@ -2,6 +2,8 @@ package com.einkphoto.app.ui.aialbum
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -713,9 +715,10 @@ private fun AiCurrentImagePreview(image: AiImageRecord?) {
             }
         }
     }
-    if (bitmap != null) {
+    Crossfade(bitmap, animationSpec = tween(220), label = "ai-current-image") { loadedBitmap ->
+    if (loadedBitmap != null) {
         Image(
-            bitmap = bitmap!!.asImageBitmap(),
+            bitmap = loadedBitmap.asImageBitmap(),
             contentDescription = "相框当前显示的 AI 图片",
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Fit,
@@ -728,6 +731,7 @@ private fun AiCurrentImagePreview(image: AiImageRecord?) {
             Icon(Icons.Outlined.Image, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(36.dp))
             Text("正在显示 AI 相册图片", style = MaterialTheme.typography.titleMedium)
         }
+    }
     }
 }
 

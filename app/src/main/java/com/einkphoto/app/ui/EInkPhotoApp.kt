@@ -60,8 +60,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
@@ -209,11 +211,16 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         }
     }
 
-    BackHandler(enabled = selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showPowerSettings || showDeviceDiagnostics)) {
+    val settingsDetailVisible = selected == AppDestination.Settings && (
+        showNetworkConfiguration || showStorageManagement || showPowerSettings ||
+            showDeviceDiagnostics || showAppUpdate
+        )
+    BackHandler(enabled = settingsDetailVisible) {
         showNetworkConfiguration = false
         showStorageManagement = false
         showPowerSettings = false
         showDeviceDiagnostics = false
+        showAppUpdate = false
     }
 
     val topBarState = rememberTopAppBarState()
@@ -248,12 +255,13 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 CenterAlignedTopAppBar(
                     title = { Text("墨水屏相册", style = MaterialTheme.typography.titleMedium) },
                     navigationIcon = {
-                        if (selected == AppDestination.Settings && (showNetworkConfiguration || showStorageManagement || showPowerSettings || showDeviceDiagnostics)) {
+                        if (settingsDetailVisible) {
                             IconButton(onClick = {
                                 showNetworkConfiguration = false
                                 showStorageManagement = false
                                 showPowerSettings = false
                                 showDeviceDiagnostics = false
+                                showAppUpdate = false
                             }) {
                                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back to settings")
                             }
@@ -265,8 +273,10 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                     ),
                     scrollBehavior = topBarScrollBehavior,
                 )
-                HeaderStatusBar(snapshot, powerSnapshot)
-                ModeSwitchGlobalStatus(modeSwitchState)
+                if (!settingsDetailVisible) {
+                    HeaderStatusBar(snapshot, powerSnapshot)
+                    ModeSwitchGlobalStatus(modeSwitchState)
+                }
                 }
             },
         ) { padding ->
@@ -379,6 +389,7 @@ private fun FloatingGlassNavigation(
     onSelected: (AppDestination) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val haptic = LocalHapticFeedback.current
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -464,7 +475,12 @@ private fun FloatingGlassNavigation(
                                     selected = isSelected,
                                     interactionSource = interactionSource,
                                     indication = null,
-                                    onClick = { onSelected(destination) },
+                                    onClick = {
+                                        if (!isSelected) {
+                                            haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                                            onSelected(destination)
+                                        }
+                                    },
                                     role = Role.Tab,
                                 ),
                             horizontalAlignment = Alignment.CenterHorizontally,

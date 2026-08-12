@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.CloudOff
@@ -349,9 +351,10 @@ internal fun SixColorSimulationPreview(
             .background(Color.White),
         contentAlignment = Alignment.Center,
     ) {
-        simulation?.let { bitmap ->
+        Crossfade(simulation, animationSpec = tween(220), label = "six-color-preview") { bitmap ->
+        bitmap?.let {
             Image(
-                bitmap = bitmap.asImageBitmap(),
+                bitmap = it.asImageBitmap(),
                 contentDescription = "${source.displayName} 图片预览",
                 contentScale = ContentScale.Fit,
                 modifier = Modifier.fillMaxSize(),
@@ -362,6 +365,7 @@ internal fun SixColorSimulationPreview(
         ) {
             Icon(Icons.Outlined.Science, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text("正在生成手机六色模拟效果", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         }
     }
 }

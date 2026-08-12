@@ -9,6 +9,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -442,9 +444,10 @@ private fun AiImagePreviewSurface(image: AiImageRecord, modifier: Modifier = Mod
         }
     }
     Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)) {
-        if (bitmap != null) {
+        Crossfade(bitmap, animationSpec = tween(220), label = "ai-library-image") { loadedBitmap ->
+        if (loadedBitmap != null) {
             Image(
-                bitmap = bitmap!!.asImageBitmap(),
+                bitmap = loadedBitmap.asImageBitmap(),
                 contentDescription = "${image.name} 六色预览图",
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Fit,
@@ -459,6 +462,7 @@ private fun AiImagePreviewSurface(image: AiImageRecord, modifier: Modifier = Mod
                 Spacer(Modifier.size(8.dp))
                 Text("预览图暂不可用", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSecondaryContainer, textAlign = TextAlign.Center)
             }
+        }
         }
     }
 }

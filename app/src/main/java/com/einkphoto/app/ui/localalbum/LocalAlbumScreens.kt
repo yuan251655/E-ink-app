@@ -102,6 +102,8 @@ import com.einkphoto.app.feature.localalbum.model.ConversionDraft
 import com.einkphoto.app.feature.localalbum.model.ConversionStage
 import com.einkphoto.app.ui.components.pressFeedbackClickable
 import com.einkphoto.app.ui.components.AsyncButtonContent
+import com.einkphoto.app.ui.components.AppMessageCard
+import com.einkphoto.app.ui.components.AppMessageKind
 import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
 import com.einkphoto.app.ui.components.crossFeatureDisplayText
@@ -249,17 +251,15 @@ internal fun LocalAlbumOverviewScreen(
         if (state.media.isEmpty()) {
             item {
                 SectionTitle("最近图片")
-                OutlinedCard {
-                    Text(
-                        if (state.device.connection == DeviceConnectionState.Online) {
-                            "TF 卡中还没有保存的照片"
-                        } else {
-                            "暂时无法读取 TF 卡信息：相框未连接或设备没有响应"
-                        },
-                        modifier = Modifier.padding(16.dp),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                AppMessageCard(
+                    kind = if (state.device.connection == DeviceConnectionState.Online) AppMessageKind.Empty else AppMessageKind.Offline,
+                    title = if (state.device.connection == DeviceConnectionState.Online) "还没有照片" else "相框未连接",
+                    message = if (state.device.connection == DeviceConnectionState.Online) {
+                        "选择照片并保存后，就会出现在这里。"
+                    } else {
+                        "恢复相框连接后，App 会自动读取 TF 卡中的照片。"
+                    },
+                )
             }
         } else {
             item { SectionTitle("最近图片", "查看全部", onOpenLibrary) }

@@ -38,6 +38,8 @@ fun AppMessageCard(
     title: String,
     message: String,
     modifier: Modifier = Modifier,
+    actionLabel: String? = null,
+    onAction: (() -> Unit)? = null,
 ) {
     val semantic = MaterialTheme.appSemanticColors
     val icon: ImageVector
@@ -63,6 +65,9 @@ fun AppMessageCard(
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(title, style = MaterialTheme.typography.titleMedium)
                 Text(message, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (actionLabel != null && onAction != null) {
+                    Button(onClick = onAction) { Text(actionLabel) }
+                }
             }
         }
     }
