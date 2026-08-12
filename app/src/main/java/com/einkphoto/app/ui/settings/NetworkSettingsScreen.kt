@@ -260,8 +260,8 @@ private fun StorageManagementPage(repository: StorageRepository, contentPadding:
     var actionMessage by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(repository) { repository.refresh() }
     Column(
-        Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text("TF 卡管理", style = MaterialTheme.typography.headlineSmall)
 
@@ -274,28 +274,24 @@ private fun StorageManagementPage(repository: StorageRepository, contentPadding:
                     Text(storageHealthDetail(state), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
-        }
-
-        Text("存储空间", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Card(Modifier.fillMaxWidth()) {
+            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
             val totalBytes = state.totalBytes
             val freeBytes = state.freeBytes
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("存储空间", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(if (totalBytes != null) "已使用 ${formatBytes((totalBytes - (freeBytes ?: 0L)).coerceAtLeast(0L))} / ${formatBytes(totalBytes)}" else "容量信息暂不可用", style = MaterialTheme.typography.titleMedium)
                 Text("剩余空间 ${freeBytes?.let(::formatBytes) ?: "--"}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("由设备端 TF 服务实时统计", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
 
-        Text("内容概览", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text("内容概览", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                StorageOverviewRow(Icons.Outlined.FolderOpen, "本地相册", storageUsageDescription(state.localAlbumItemCount, state.localAlbumUsageBytes, "已保存照片"))
-                StorageOverviewRow(Icons.Outlined.Storage, "临时文件", storageUsageDescription(state.stagingItemCount, state.stagingUsageBytes, "未完成上传的临时文件"))
-            }
+            StorageOverviewRow(Icons.Outlined.FolderOpen, "本地相册", storageUsageDescription(state.localAlbumItemCount, state.localAlbumUsageBytes, "已保存照片"))
+            HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+            StorageOverviewRow(Icons.Outlined.Storage, "临时文件", storageUsageDescription(state.stagingItemCount, state.stagingUsageBytes, "未完成上传的临时文件"))
         }
 
-        Text("设备维护", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text("设备维护", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -306,7 +302,7 @@ private fun StorageManagementPage(repository: StorageRepository, contentPadding:
                     }
                 }
                 OutlinedButton(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     enabled = !rechecking,
                     onClick = {
                         scope.launch {
@@ -322,7 +318,7 @@ private fun StorageManagementPage(repository: StorageRepository, contentPadding:
             }
         }
 
-        Text("最近状态", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text("最近状态", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Card(Modifier.fillMaxWidth()) {
             Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -339,7 +335,10 @@ private fun StorageManagementPage(repository: StorageRepository, contentPadding:
 
 @Composable
 private fun StorageOverviewRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, description: String) {
-    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -395,28 +394,31 @@ private fun NetworkConfigurationPage(repository: NetworkRepository, contentPaddi
     var message by remember { mutableStateOf<String?>(null) }; var staDialog by remember { mutableStateOf<String?>(null) }
     var editAp by remember { mutableStateOf(false) }; var confirmRestore by remember { mutableStateOf(false) }; var confirmForget by remember { mutableStateOf(false) }
     LaunchedEffect(repository) { repository.refresh() }
-    Column(Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(
+        Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
         Text("网络配置", style = MaterialTheme.typography.headlineSmall)
         ConnectionSummary(state)
         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("相框热点（AP）", style = MaterialTheme.typography.titleMedium)
             Text("${state.ap.ssid}  ·  ${state.ap.ip}")
             Text("信道 ${state.ap.channel}  ·  已连接设备 ${state.ap.clientCount}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onClick = { editAp = true }, modifier = Modifier.fillMaxWidth()) { Text("修改热点名称和密码") }
-            OutlinedButton(onClick = { confirmRestore = true }, modifier = Modifier.fillMaxWidth()) { Text("恢复默认热点") }
+            Button(onClick = { editAp = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("修改热点名称和密码") }
+            OutlinedButton(onClick = { confirmRestore = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("恢复默认热点") }
         } }
         Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("家庭 Wi-Fi（STA）", style = MaterialTheme.typography.titleMedium)
             Text(staDescription(state), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (state.sta.ip != null) Text("IP：${state.sta.ip}    网关：${state.sta.gateway ?: "—"}")
-            Button(enabled = !scanning, onClick = { scope.launch { scanning = true; message = null; repository.scan24Ghz().onSuccess { networks = it }.onFailure { message = "扫描失败，请确认相框在线后重试" }; scanning = false } }, modifier = Modifier.fillMaxWidth()) { AsyncButtonContent(scanning, "扫描 2.4 GHz Wi-Fi", "正在扫描…") }
+            Button(enabled = !scanning, onClick = { scope.launch { scanning = true; message = null; repository.scan24Ghz().onSuccess { networks = it }.onFailure { message = "扫描失败，请确认相框在线后重试" }; scanning = false } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { AsyncButtonContent(scanning, "扫描 2.4 GHz Wi-Fi", "正在扫描…") }
             networks.forEach { network -> Row(Modifier.fillMaxWidth().pressFeedbackClickable { staDialog = network.ssid }.padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(network.ssid); Text("信号 ${network.rssiDbm} dBm  ·  信道 ${network.channel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text(network.security.name.uppercase()) } }
-            OutlinedButton(onClick = { staDialog = "" }, modifier = Modifier.fillMaxWidth()) { Text("其他网络") }
-            if (state.sta.state != StaState.Disabled || state.sta.ssid != null) OutlinedButton(onClick = { confirmForget = true }, modifier = Modifier.fillMaxWidth()) { Text("忘记已保存的 Wi-Fi") }
+            OutlinedButton(onClick = { staDialog = "" }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("其他网络") }
+            if (state.sta.state != StaState.Disabled || state.sta.ssid != null) OutlinedButton(onClick = { confirmForget = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("忘记已保存的 Wi-Fi") }
         } }
         Text("AP 网页配网会一直保留，无法通过 App 连接时仍可连接相框热点后访问 192.168.4.1。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        OutlinedButton(onClick = { scope.launch { repository.refresh() } }, modifier = Modifier.fillMaxWidth()) { Text("刷新状态") }
+        OutlinedButton(onClick = { scope.launch { repository.refresh() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("刷新状态") }
     }
     if (editAp) ApDialog(state, { editAp = false }) { draft -> scope.launch { message = resultMessage(repository.saveAp(draft), "热点设置已保存。若手机通过该热点连接，请重新连接新热点。"); editAp = false } }
     staDialog?.let { initial -> StaDialog(initial, { staDialog = null }) { draft -> scope.launch { message = resultMessage(repository.testAndSaveSta(draft), "Wi-Fi 已连接并保存"); staDialog = null } } }

@@ -151,8 +151,9 @@ internal fun LocalAlbumOverviewScreen(
             SectionTitle("设备当前画面")
             Spacer(Modifier.height(12.dp))
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    PlaybackStatusCard(state.playback)
+                PlaybackStatusRow(state.playback)
+                HorizontalDivider(modifier = Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (showingModeCover) {
                         Image(
                             painter = painterResource(DeviceFeature.LocalAlbum.modeCoverDrawableRes()),
@@ -179,6 +180,7 @@ internal fun LocalAlbumOverviewScreen(
                         DemoArtwork(seed = 1, description = "设备当前电子纸画面", modifier = Modifier.fillMaxWidth())
                     }
                 }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         when {
@@ -197,18 +199,11 @@ internal fun LocalAlbumOverviewScreen(
                     if (state.displayJob?.state in setOf(DeviceJobState.Queued, DeviceJobState.Running)) {
                         StatusRow(Icons.Outlined.Refresh, "正在切换图片", "电子纸正在刷新，请耐心等待完成")
                     }
-                    Text(
-                        "最近成功：${formatTime(state.currentDisplay.lastSuccessfulRefreshEpochMillis)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    currentMedia?.let { media ->
-                        Text(
-                            "原图：${media.sourceWidthPx} × ${media.sourceHeightPx} · ${media.orientationLabel()}",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
+                    val metadata = buildList {
+                        add("最近成功 ${formatTime(state.currentDisplay.lastSuccessfulRefreshEpochMillis)}")
+                        currentMedia?.let { add("${it.sourceWidthPx} × ${it.sourceHeightPx} · ${it.orientationLabel()}") }
+                    }.joinToString("  ·  ")
+                    Text(metadata, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = { viewModel.displayPrevious() },
@@ -284,7 +279,7 @@ internal fun LocalAlbumOverviewScreen(
 
 /** Device-authoritative playback state from GET /api/v1/local-album/playback. */
 @Composable
-private fun PlaybackStatusCard(playback: PlaybackSettings) {
+private fun PlaybackStatusRow(playback: PlaybackSettings) {
     val isAuto = playback.mode == PlayMode.Auto
     val title = if (isAuto) "正在轮播" else "轮播已暂停"
     val detail = if (isAuto) {
@@ -310,36 +305,47 @@ private fun PlaybackStatusCard(playback: PlaybackSettings) {
         if (isAuto) append(if (nextTime != null) "，下次切换时间 $nextTime" else "，下次切换时间暂未同步")
     }
 
-    OutlinedCard(
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = if (isAuto) 0.75f else 0.45f)),
-        colors = CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.28f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = accessibilityText },
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp).semantics { contentDescription = accessibilityText },
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.Top,
-        ) {
-            Icon(
-                imageVector = if (isAuto) Icons.Outlined.Schedule else Icons.Outlined.Pause,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(28.dp),
+        Icon(
+            imageVector = if (isAuto) Icons.Outlined.Schedule else Icons.Outlined.Pause,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(24.dp),
+        )
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (isAuto) Text(
+                nextTime?.let { "下次切换：$it" } ?: "下次切换时间正在与设备同步",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (isAuto) {
-                    Text(
-                        nextTime?.let { "下次切换：$it" } ?: "下次切换时间正在与设备同步",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
         }
+    }
+}
+
+@Composable
+private fun LibrarySummaryPanel(state: LocalAlbumUiState) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            SummaryValue("本地图片", "${state.media.size} 张", Modifier.weight(1f))
+            SummaryValue("可用空间", formatBytes(state.device.storageFreeBytes), Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun SummaryValue(label: String, value: String, modifier: Modifier = Modifier) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(value, style = MaterialTheme.typography.titleMedium)
     }
 }
 
@@ -355,11 +361,8 @@ private fun formatPlaybackTime(epochMillis: Long): String =
 @Composable
 internal fun DeviceLibraryScreen(state: LocalAlbumUiState, onBack: () -> Unit, onBatch: () -> Unit, onMedia: (MediaId) -> Unit) {
     Column(Modifier.fillMaxSize()) {
-        SubpageHeader("设备中的图片", "只显示已由设备原子入库的本地媒体", onBack, "选择", onBatch, actionEnabled = !state.actionsLocked)
-        Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            InfoPill("本地图片", "${state.media.size} 张", Modifier.weight(1f))
-            InfoPill("可用空间", formatBytes(state.device.storageFreeBytes), Modifier.weight(1f))
-        }
+        SubpageHeader("设备中的图片", "已保存到 TF 卡的本地照片", onBack, "选择", onBatch, actionEnabled = !state.actionsLocked)
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { LibrarySummaryPanel(state) }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(156.dp),
             modifier = Modifier.fillMaxSize(),
@@ -1127,16 +1130,6 @@ private fun SubpageHeader(
             Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (action != null && onAction != null) TextButton(onClick = onAction, enabled = actionEnabled, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
-    }
-}
-
-@Composable
-private fun InfoPill(label: String, value: String, modifier: Modifier = Modifier) {
-    Card(modifier, colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
-        Column(Modifier.padding(12.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(value, style = MaterialTheme.typography.titleMedium)
-        }
     }
 }
 

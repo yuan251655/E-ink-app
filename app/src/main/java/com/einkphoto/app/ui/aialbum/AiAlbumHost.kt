@@ -514,6 +514,7 @@ private fun AiAlbumHomeScreen(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 ) {
                     AiPrimaryActionRow(
+                        icon = Icons.Outlined.AutoAwesome,
                         title = "创建图片",
                         detail = "用文字生成一张新的 AI 图片",
                         onClick = { onNavigate(AiAlbumRoute.Create) },
@@ -523,6 +524,7 @@ private fun AiAlbumHomeScreen(
                         color = MaterialTheme.colorScheme.outlineVariant,
                     )
                     AiPrimaryActionRow(
+                        icon = Icons.Outlined.Collections,
                         title = "照片风格转换",
                         detail = "导入照片并选择一种艺术风格",
                         onClick = { onNavigate(AiAlbumRoute.StyleGallery) },
@@ -537,20 +539,14 @@ private fun AiAlbumHomeScreen(
                 )
             }
             item {
-                Text("快捷功能", style = MaterialTheme.typography.titleMedium)
+                Text("快捷功能", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.size(10.dp))
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        AiShortcutCard(Icons.Outlined.Collections, "AI 图片", "查看生成记录", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Images) }
-                        AiShortcutCard(Icons.Outlined.Schedule, "轮播设置", "仅播放 AI 图片", Modifier.weight(1f)) { onNavigate(AiAlbumRoute.Playback) }
-                    }
-                    AiShortcutCard(
-                        Icons.Outlined.SettingsSuggest,
-                        "模型配置",
-                        "服务与密钥",
-                        Modifier.fillMaxWidth(),
-                        onClick = onOpenConfig,
-                    )
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                    AiPrimaryActionRow(Icons.Outlined.Collections, "AI 图片", "查看生成记录") { onNavigate(AiAlbumRoute.Images) }
+                    HorizontalDivider(modifier = Modifier.padding(start = 76.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    AiPrimaryActionRow(Icons.Outlined.Schedule, "轮播设置", "仅播放 AI 图片") { onNavigate(AiAlbumRoute.Playback) }
+                    HorizontalDivider(modifier = Modifier.padding(start = 76.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    AiPrimaryActionRow(Icons.Outlined.SettingsSuggest, "模型配置", "服务与密钥", onOpenConfig)
                 }
             }
         }
@@ -559,6 +555,7 @@ private fun AiAlbumHomeScreen(
 
 @Composable
 private fun AiPrimaryActionRow(
+    icon: ImageVector,
     title: String,
     detail: String,
     onClick: () -> Unit,
@@ -572,7 +569,7 @@ private fun AiPrimaryActionRow(
             Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Outlined.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
@@ -773,17 +770,6 @@ private fun XiaozhiInputCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-        }
-    }
-}
-
-@Composable
-private fun AiShortcutCard(icon: ImageVector, title: String, detail: String, modifier: Modifier = Modifier, onClick: () -> Unit) {
-    OutlinedCard(modifier = modifier.pressFeedbackClickable(role = Role.Button, onClick = onClick)) {
-        Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(detail, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
         }
     }
 }
