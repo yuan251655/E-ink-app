@@ -38,6 +38,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.einkphoto.app.feature.settings.appupdate.AppUpdatePhase
 import com.einkphoto.app.feature.settings.appupdate.AppUpdateUiState
 import com.einkphoto.app.feature.settings.appupdate.AppUpdateViewModel
+import com.einkphoto.app.ui.components.AsyncButtonContent
 
 @Composable
 fun AppUpdateScreen(onBack: () -> Unit, contentPadding: PaddingValues) {
@@ -134,7 +135,13 @@ private fun AppUpdateContent(
             when (state.phase) {
                 AppUpdatePhase.UpdateAvailable -> Button(onClick = onDownload, modifier = Modifier.fillMaxWidth()) { Text("下载更新") }
                 AppUpdatePhase.ReadyToInstall -> Button(onClick = onInstall, modifier = Modifier.fillMaxWidth()) { Text("立即安装") }
-                AppUpdatePhase.Checking, AppUpdatePhase.Downloading -> OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) { Text(if (state.phase == AppUpdatePhase.Checking) "正在检查…" else "正在下载…") }
+                AppUpdatePhase.Checking, AppUpdatePhase.Downloading -> OutlinedButton(onClick = {}, enabled = false, modifier = Modifier.fillMaxWidth()) {
+                    AsyncButtonContent(
+                        loading = true,
+                        idleText = "",
+                        loadingText = if (state.phase == AppUpdatePhase.Checking) "正在检查…" else "正在下载…",
+                    )
+                }
                 else -> Button(onClick = onCheck, modifier = Modifier.fillMaxWidth()) { Text("检查更新") }
             }
         }

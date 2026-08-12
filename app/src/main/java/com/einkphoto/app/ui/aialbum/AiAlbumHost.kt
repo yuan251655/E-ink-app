@@ -95,6 +95,7 @@ import com.einkphoto.app.ui.components.crossFeatureDisplayText
 import com.einkphoto.app.ui.components.modeCoverDrawableRes
 import com.einkphoto.app.ui.components.pressFeedbackClickable
 import com.einkphoto.app.ui.components.hierarchicalPageTransition
+import com.einkphoto.app.ui.components.AsyncButtonContent
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -629,7 +630,7 @@ private fun AiPlaybackSettingsScreen(state: PlaybackSettings, onSave: (PlayMode,
             item { Text("播放模式", style = MaterialTheme.typography.titleMedium); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(mode == PlayMode.Auto, { mode = PlayMode.Auto }, { Text("自动轮播") }, Modifier.weight(1f)); FilterChip(mode == PlayMode.Paused, { mode = PlayMode.Paused }, { Text("暂停轮播") }, Modifier.weight(1f)) } }
             item { Text("轮播间隔", style = MaterialTheme.typography.titleMedium); Spacer(Modifier.size(6.dp)); listOf(300 to "5 分钟",900 to "15 分钟",1800 to "30 分钟",3600 to "1 小时",10800 to "3 小时",21600 to "6 小时",43200 to "12 小时",86400 to "24 小时").chunked(2).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) { row.forEach { (v,l) -> FilterChip(interval == v, { interval = v }, { Text(l) }, Modifier.weight(1f).heightIn(min = 48.dp)) } }; Spacer(Modifier.size(10.dp)) } }
             item { Text("播放顺序", style = MaterialTheme.typography.titleMedium); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(order == PlayOrder.Sequential, { order = PlayOrder.Sequential }, { Text("顺序") }); FilterChip(order == PlayOrder.Random, { order = PlayOrder.Random }, { Text("随机") }) } }
-            item { Button(onClick = { onSave(mode, order, interval) }, enabled = state.syncState == PlaybackSyncState.Ready, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text(if (state.syncState == PlaybackSyncState.Saving) "正在保存…" else "保存到相册") }; Text(when (state.syncState) { PlaybackSyncState.Offline -> "相框未连接，无法保存"; PlaybackSyncState.Conflict -> "设备设置已变化，请确认后重新保存"; PlaybackSyncState.Loading -> "正在读取设备设置"; else -> "设置将独立保存到 AI 相册" }, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Button(onClick = { onSave(mode, order, interval) }, enabled = state.syncState == PlaybackSyncState.Ready, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { AsyncButtonContent(state.syncState == PlaybackSyncState.Saving, "保存到相册", "正在保存…") }; Text(when (state.syncState) { PlaybackSyncState.Offline -> "相框未连接，无法保存"; PlaybackSyncState.Conflict -> "设备设置已变化，请确认后重新保存"; PlaybackSyncState.Loading -> "正在读取设备设置"; else -> "设置将独立保存到 AI 相册" }, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }

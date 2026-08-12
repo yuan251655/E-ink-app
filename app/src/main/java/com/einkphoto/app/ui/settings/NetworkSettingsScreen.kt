@@ -16,7 +16,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import com.einkphoto.app.ui.components.AppleAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -66,6 +66,7 @@ import com.einkphoto.app.feature.settings.power.PowerRepository
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.ui.components.pressFeedbackClickable
 import com.einkphoto.app.ui.components.hierarchicalPageTransition
+import com.einkphoto.app.ui.components.AsyncButtonContent
 import com.einkphoto.app.feature.aialbum.VoiceGenerationServiceController
 import kotlinx.coroutines.launch
 
@@ -317,7 +318,7 @@ private fun StorageManagementPage(repository: StorageRepository, contentPadding:
                             rechecking = false
                         }
                     },
-                ) { Text(if (rechecking) "正在检测…" else "重新检测") }
+                ) { AsyncButtonContent(rechecking, "重新检测", "正在检测…") }
             }
         }
 
@@ -408,7 +409,7 @@ private fun NetworkConfigurationPage(repository: NetworkRepository, contentPaddi
             Text("家庭 Wi-Fi（STA）", style = MaterialTheme.typography.titleMedium)
             Text(staDescription(state), color = MaterialTheme.colorScheme.onSurfaceVariant)
             if (state.sta.ip != null) Text("IP：${state.sta.ip}    网关：${state.sta.gateway ?: "—"}")
-            Button(enabled = !scanning, onClick = { scope.launch { scanning = true; message = null; repository.scan24Ghz().onSuccess { networks = it }.onFailure { message = "扫描失败，请确认相框在线后重试" }; scanning = false } }, modifier = Modifier.fillMaxWidth()) { Text(if (scanning) "正在扫描…" else "扫描 2.4 GHz Wi-Fi") }
+            Button(enabled = !scanning, onClick = { scope.launch { scanning = true; message = null; repository.scan24Ghz().onSuccess { networks = it }.onFailure { message = "扫描失败，请确认相框在线后重试" }; scanning = false } }, modifier = Modifier.fillMaxWidth()) { AsyncButtonContent(scanning, "扫描 2.4 GHz Wi-Fi", "正在扫描…") }
             networks.forEach { network -> Row(Modifier.fillMaxWidth().pressFeedbackClickable { staDialog = network.ssid }.padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(network.ssid); Text("信号 ${network.rssiDbm} dBm  ·  信道 ${network.channel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text(network.security.name.uppercase()) } }
             OutlinedButton(onClick = { staDialog = "" }, modifier = Modifier.fillMaxWidth()) { Text("其他网络") }
             if (state.sta.state != StaState.Disabled || state.sta.ssid != null) OutlinedButton(onClick = { confirmForget = true }, modifier = Modifier.fillMaxWidth()) { Text("忘记已保存的 Wi-Fi") }

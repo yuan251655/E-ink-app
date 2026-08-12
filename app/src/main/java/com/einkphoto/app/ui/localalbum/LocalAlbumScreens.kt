@@ -43,7 +43,7 @@ import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.PhoneAndroid
 import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material3.Button
-import androidx.compose.material3.AlertDialog
+import com.einkphoto.app.ui.components.AppleAlertDialog as AlertDialog
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -101,6 +101,7 @@ import com.einkphoto.app.feature.localalbum.model.FitMode
 import com.einkphoto.app.feature.localalbum.model.ConversionDraft
 import com.einkphoto.app.feature.localalbum.model.ConversionStage
 import com.einkphoto.app.ui.components.pressFeedbackClickable
+import com.einkphoto.app.ui.components.AsyncButtonContent
 import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
 import com.einkphoto.app.ui.components.crossFeatureDisplayText
@@ -721,8 +722,10 @@ internal fun LocalConversionTaskScreen(
                         enabled = !state.batchSaveActive,
                         modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                     ) {
-                        Text(
-                            if (state.batchSaveActive) "正在保存…" else "全部保存到相框（${state.readyToSaveCount} 张）",
+                        AsyncButtonContent(
+                            loading = state.batchSaveActive,
+                            idleText = "全部保存到相框（${state.readyToSaveCount} 张）",
+                            loadingText = "正在保存…",
                         )
                     }
                     Spacer(Modifier.height(8.dp))

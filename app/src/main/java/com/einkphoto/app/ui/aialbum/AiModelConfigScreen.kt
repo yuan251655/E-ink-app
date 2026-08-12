@@ -30,7 +30,7 @@ import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.outlined.Wifi
-import androidx.compose.material3.AlertDialog
+import com.einkphoto.app.ui.components.AppleAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -63,6 +63,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.einkphoto.app.ui.components.pressFeedbackClickable
+import com.einkphoto.app.ui.components.AsyncButtonContent
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
 
 internal enum class AiServiceMode(val label: String) {
@@ -229,7 +230,8 @@ internal fun AiModelConfigScreen(
                         Spacer(Modifier.size(8.dp))
                     }
                     Button(onClick = { if (valid) showBillableConfirmation = true else localMessage = "请填写模型名称、HTTPS 接口地址、模型 ID 和有效 API Key" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                        Icon(Icons.Outlined.CheckCircle, null); Spacer(Modifier.size(8.dp)); Text(if (saving) "正在测试…" else if (savedFieldsUnchanged) "测试已保存模型" else "保存并测试")
+                        if (!saving) { Icon(Icons.Outlined.CheckCircle, null); Spacer(Modifier.size(8.dp)) }
+                        AsyncButtonContent(saving, if (savedFieldsUnchanged) "测试已保存模型" else "保存并测试", "正在测试…")
                     }
                     OutlinedButton(onClick = { if (valid) onSave(profileName.trim(), serviceUrl.trim(), imageModel.trim(), newApiKey, false) else localMessage = "请先补全模型名称、接口、模型 ID 与 Key" }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("保存并设为当前模型") }
                     TextButton(onClick = { showDeleteConfirmation = true }, enabled = snapshot.configured && !saving, modifier = Modifier.fillMaxWidth()) { Text("清除配置", color = MaterialTheme.colorScheme.error) }
@@ -419,9 +421,8 @@ private fun LegacyAiModelConfigScreen(
                         Spacer(Modifier.size(10.dp))
                     }
                     Button(onClick = { validateAndExplain(testRequested = true) }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) {
-                        Icon(Icons.Outlined.CheckCircle, null)
-                        Spacer(Modifier.size(8.dp))
-                        Text(if (saving) "正在保存…" else "保存并测试")
+                        if (!saving) { Icon(Icons.Outlined.CheckCircle, null); Spacer(Modifier.size(8.dp)) }
+                        AsyncButtonContent(saving, "保存并测试", "正在保存…")
                     }
                     OutlinedButton(onClick = { validateAndExplain(testRequested = false) }, enabled = !saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                         Icon(Icons.Outlined.Save, null)

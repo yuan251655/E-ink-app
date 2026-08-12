@@ -8,17 +8,31 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CenterAlignedTopAppBar
@@ -26,13 +40,11 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -43,7 +55,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
@@ -198,11 +216,35 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
         showDeviceDiagnostics = false
     }
 
-    Scaffold(
-        modifier = Modifier.fillMaxSize(),
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Column {
+    val topBarState = rememberTopAppBarState()
+    val topBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(topBarState)
+    val topBarDepth by animateDpAsState(
+        targetValue = if (topBarState.overlappedFraction > 0.01f) 6.dp else 0.dp,
+        animationSpec = tween(220),
+        label = "top-bar-depth",
+    )
+
+    Box(Modifier.fillMaxSize()) {
+        Scaffold(
+            modifier = Modifier
+                .fillMaxSize()
+                .nestedScroll(topBarScrollBehavior.nestedScrollConnection),
+            containerColor = MaterialTheme.colorScheme.background,
+            topBar = {
+                Column(
+                    Modifier
+                        .shadow(topBarDepth)
+                        .background(
+                            Brush.verticalGradient(
+                                listOf(
+                                    MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+                                    MaterialTheme.colorScheme.surface.copy(
+                                        alpha = if (topBarState.overlappedFraction > 0.01f) 0.88f else 0.76f,
+                                    ),
+                                ),
+                            ),
+                        ),
+                ) {
                 CenterAlignedTopAppBar(
                     title = { Text("墨水屏相册", style = MaterialTheme.typography.titleMedium) },
                     navigationIcon = {
@@ -218,77 +260,36 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                         }
                     },
                     colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
-                        scrolledContainerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                        containerColor = Color.Transparent,
+                        scrolledContainerColor = Color.Transparent,
                     ),
+                    scrollBehavior = topBarScrollBehavior,
                 )
                 HeaderStatusBar(snapshot, powerSnapshot)
                 ModeSwitchGlobalStatus(modeSwitchState)
-            }
-        },
-        bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.background.copy(alpha = 0.94f),
-                tonalElevation = 0.dp,
-            ) {
-                AppDestination.entries.forEach { destination ->
-                    val isSelected = selected == destination
-                    val iconScale by animateFloatAsState(
-                        targetValue = if (isSelected) 1.08f else 1f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioNoBouncy,
-                            stiffness = Spring.StiffnessMedium,
-                        ),
-                        label = "${destination.name}-icon-scale",
-                    )
-                    NavigationBarItem(
-                        selected = isSelected,
-                        onClick = {
-                            // A bottom-tab selection always enters the settings home.
-                            // This prevents a previously opened sub-page from being
-                            // restored unexpectedly after changing tabs or restarting.
-                            showNetworkConfiguration = false
-                            showStorageManagement = false
-                            showPowerSettings = false
-                            showDeviceDiagnostics = false
-                            onDestinationSelected(destination)
-                        },
-                        icon = {
-                            Icon(
-                                if (isSelected) destination.selectedIcon else destination.icon,
-                                contentDescription = destination.title,
-                                modifier = Modifier.graphicsLayer {
-                                    scaleX = iconScale
-                                    scaleY = iconScale
-                                },
-                            )
-                        },
-                        label = { Text(destination.title) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = MaterialTheme.colorScheme.primary,
-                            selectedTextColor = MaterialTheme.colorScheme.primary,
-                            indicatorColor = MaterialTheme.colorScheme.primaryContainer,
-                            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    )
                 }
-            }
-        },
-    ) { padding ->
-        AnimatedContent(
+            },
+        ) { padding ->
+            val layoutDirection = LocalLayoutDirection.current
+            val contentPadding = PaddingValues(
+                start = padding.calculateLeftPadding(layoutDirection),
+                top = padding.calculateTopPadding(),
+                end = padding.calculateRightPadding(layoutDirection),
+                bottom = 104.dp,
+            )
+            AnimatedContent(
             targetState = selected,
             modifier = Modifier.fillMaxSize(),
             transitionSpec = {
                 val direction = if (targetState.ordinal >= initialState.ordinal) 1 else -1
-                (fadeIn(tween(180)) + slideInHorizontally(tween(320)) { direction * it / 10 }) togetherWith
-                    (fadeOut(tween(140)) + slideOutHorizontally(tween(240)) { -direction * it / 12 })
+                (fadeIn(tween(190)) + slideInHorizontally(tween(260)) { direction * it / 18 }) togetherWith
+                    (fadeOut(tween(150)) + slideOutHorizontally(tween(220)) { -direction * it / 22 })
             },
             label = "main-destination",
         ) { destination ->
             when (destination) {
                 AppDestination.LocalAlbum -> LocalAlbumDemoHost(
-                contentPadding = padding,
+                contentPadding = contentPadding,
                 runtime = localAlbumRuntime,
                 modeSwitchState = modeSwitchState,
                 onSwitchMode = modeSwitchViewModel::switchTo,
@@ -329,11 +330,11 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 onCancelAiWaitingSubmission = aiGenerationViewModel::cancelWaitingSubmission,
                 onDiscardAiHistory = aiGenerationViewModel::discardHistory,
                 onClearAiHistory = aiGenerationViewModel::clearHistory,
-                contentPadding = padding,
+                contentPadding = contentPadding,
             )
                 AppDestination.Settings -> NetworkSettingsScreen(
                 repository = networkRepository,
-                contentPadding = padding,
+                contentPadding = contentPadding,
                 showNetworkConfiguration = showNetworkConfiguration,
                 onOpenNetworkConfiguration = { showNetworkConfiguration = true },
                 showStorageManagement = showStorageManagement,
@@ -350,11 +351,144 @@ private fun EInkPhotoAppContent(selected: AppDestination, onDestinationSelected:
                 deviceSnapshot = snapshot,
             )
                 AppDestination.Dashboard -> InfoDashboardHost(
-                contentPadding = padding,
+                contentPadding = contentPadding,
                 device = snapshot,
                 modeSwitchState = modeSwitchState,
                 onSwitchMode = modeSwitchViewModel::switchTo,
             )
+            }
+            }
+        }
+        FloatingGlassNavigation(
+            selected = selected,
+            onSelected = { destination ->
+                showNetworkConfiguration = false
+                showStorageManagement = false
+                showPowerSettings = false
+                showDeviceDiagnostics = false
+                onDestinationSelected(destination)
+            },
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
+    }
+}
+
+@Composable
+private fun FloatingGlassNavigation(
+    selected: AppDestination,
+    onSelected: (AppDestination) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .navigationBarsPadding()
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .shadow(
+                    elevation = 18.dp,
+                    shape = RoundedCornerShape(28.dp),
+                    ambientColor = Color.Black.copy(alpha = 0.12f),
+                    spotColor = Color.Black.copy(alpha = 0.16f),
+                ),
+            color = Color.Transparent,
+            shape = RoundedCornerShape(28.dp),
+            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.62f)),
+            tonalElevation = 0.dp,
+        ) {
+            BoxWithConstraints(
+                Modifier
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.88f),
+                                MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+                            ),
+                        ),
+                    )
+                    .padding(6.dp)
+                    .selectableGroup(),
+            ) {
+                val itemWidth = maxWidth / AppDestination.entries.size
+                val indicatorOffset by animateDpAsState(
+                    targetValue = itemWidth * selected.ordinal,
+                    animationSpec = spring(
+                        dampingRatio = 0.78f,
+                        stiffness = Spring.StiffnessMediumLow,
+                    ),
+                    label = "glass-navigation-indicator",
+                )
+                Box(
+                    Modifier
+                        .offset(x = indicatorOffset)
+                        .width(itemWidth)
+                        .height(58.dp)
+                        .background(
+                            MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f),
+                            RoundedCornerShape(22.dp),
+                        ),
+                )
+                Row(Modifier.fillMaxWidth()) {
+                    AppDestination.entries.forEach { destination ->
+                        val isSelected = selected == destination
+                        val interactionSource = remember { MutableInteractionSource() }
+                        val isPressed by interactionSource.collectIsPressedAsState()
+                        val itemScale by animateFloatAsState(
+                            targetValue = if (isPressed) 0.97f else 1f,
+                            animationSpec = if (isPressed) tween(70) else spring(
+                                dampingRatio = Spring.DampingRatioNoBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                            ),
+                            label = "${destination.name}-item-scale",
+                        )
+                        val iconScale by animateFloatAsState(
+                            targetValue = if (isSelected) 1.08f else 1f,
+                            animationSpec = spring(
+                                dampingRatio = Spring.DampingRatioMediumBouncy,
+                                stiffness = Spring.StiffnessMedium,
+                            ),
+                            label = "${destination.name}-icon-scale",
+                        )
+                        Column(
+                            modifier = Modifier
+                                .width(itemWidth)
+                                .height(58.dp)
+                                .graphicsLayer {
+                                    scaleX = itemScale
+                                    scaleY = itemScale
+                                }
+                                .selectable(
+                                    selected = isSelected,
+                                    interactionSource = interactionSource,
+                                    indication = null,
+                                    onClick = { onSelected(destination) },
+                                    role = Role.Tab,
+                                ),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center,
+                        ) {
+                            Icon(
+                                imageVector = if (isSelected) destination.selectedIcon else destination.icon,
+                                contentDescription = destination.title,
+                                tint = if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.graphicsLayer {
+                                    scaleX = iconScale
+                                    scaleY = iconScale
+                                },
+                            )
+                            Text(
+                                text = destination.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
