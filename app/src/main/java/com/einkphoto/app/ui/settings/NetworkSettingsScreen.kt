@@ -151,7 +151,7 @@ private fun SettingsHome(
     ) {
         Text("设置", style = MaterialTheme.typography.headlineLarge)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("设备", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("相框", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -163,21 +163,19 @@ private fun SettingsHome(
                     onClick = onOpenNetwork,
                 )
                 SettingsDivider()
-                SettingsLinkRow("TF 卡管理", "查看存储状态、空间信息和设备维护", onClick = onOpenStorageManagement)
-                SettingsDivider()
                 SettingsLinkRow("电池、电源与休眠", "查看主电池、USB 充电和休眠设置", onClick = onOpenPowerSettings)
                 SettingsDivider()
-                SettingsLinkRow("设备诊断", "查看设备、网络、TF 卡和显示状态", onClick = onOpenDeviceDiagnostics)
+                SettingsLinkRow("音频与语音", "调节相框音量、静音和扬声器测试", onClick = onOpenAudioSettings)
+                SettingsDivider()
+                SettingsLinkRow("TF 卡管理", "查看存储状态、空间信息和设备维护", onClick = onOpenStorageManagement)
             }
         }
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("语音与应用", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("智能服务", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             ) {
-                SettingsLinkRow("音频与语音", "调节相框音量、静音和扬声器测试", onClick = onOpenAudioSettings)
-                SettingsDivider()
                 Row(
                     Modifier.fillMaxWidth().heightIn(min = 76.dp).padding(horizontal = 16.dp, vertical = 12.dp),
                     verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
@@ -204,6 +202,15 @@ private fun SettingsHome(
                         },
                     )
                 }
+            }
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("App 与维护", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            ) {
+                SettingsLinkRow("设备诊断", "查看设备、网络、TF 卡和显示状态", onClick = onOpenDeviceDiagnostics)
                 SettingsDivider()
                 SettingsLinkRow("应用更新", "检查并安装最新版本的相念 App", onClick = onOpenAppUpdate)
             }

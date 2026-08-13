@@ -187,7 +187,7 @@ internal fun AiModelConfigScreen(
         AlertDialog(
             onDismissRequest = { showBillableConfirmation = false },
             title = { Text("确认测试模型？") },
-            text = { Text("测试会向模型服务发送一次最小生成请求，可能产生少量服务费用；结果不会下载到相框、不会写入 TF，也不会刷新屏幕。") },
+            text = { Text("这里只检查手机本地保存的接入点、模型和 API Key 是否填写完整，不会调用 Seedream、不会产生费用，也不会写入 TF 卡或刷新屏幕。") },
             confirmButton = { TextButton(onClick = { showBillableConfirmation = false; if (savedFieldsUnchanged) onTestSaved() else onSave(profileName.trim(), serviceUrl.trim(), imageModel.trim(), newApiKey, true) }) { Text(if (savedFieldsUnchanged) "测试模型" else "保存并测试") } },
             dismissButton = { TextButton(onClick = { showBillableConfirmation = false }) { Text("取消") } },
         )

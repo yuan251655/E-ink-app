@@ -8,7 +8,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.CheckCircle
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.CardDefaults
@@ -22,10 +21,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.core.device.DeviceModeState
+import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.feature.mode.ModeSwitchPhase
 import com.einkphoto.app.feature.mode.ModeSwitchUiState
 import com.einkphoto.app.R
@@ -37,23 +38,47 @@ fun ModeFeatureHeader(
     device: DeviceSnapshot,
     switchState: ModeSwitchUiState,
     onSwitch: (DeviceFeature) -> Unit,
+    screenContentLabel: String,
     modifier: Modifier = Modifier,
 ) {
     val switchingHere = (switchState.switching && switchState.target == target) ||
         (device.modeState == DeviceModeState.Switching && device.pendingFeature == target)
-    Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(title, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
-        if (device.activeFeature == target && !switchingHere && device.pendingFeature == null) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                Icon(Icons.Outlined.CheckCircle, null, tint = MaterialTheme.colorScheme.primary)
-                Text("当前模式", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+    val connected = device.connection == DeviceConnectionState.Online
+    val activeHere = connected && device.activeFeature == target && !switchingHere && device.pendingFeature == null
+    val compactStatus = if (connected) {
+        "${device.activeFeature.displayName()} · $screenContentLabel"
+    } else {
+        "未连接 · 连接后读取"
+    }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text(title, style = MaterialTheme.typography.headlineSmall)
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.surface,
+            shape = MaterialTheme.shapes.medium,
+        ) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("相框", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    compactStatus,
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
             }
-        } else {
+        }
+        if (!activeHere) {
             TextButton(
                 onClick = { onSwitch(target) },
-                enabled = !switchState.switching && device.modeState != DeviceModeState.Switching,
-                modifier = Modifier.heightIn(min = 48.dp),
-            ) { Text(if (switchingHere) "正在切换…" else "切换当前模式") }
+                enabled = connected && !switchState.switching && device.modeState != DeviceModeState.Switching,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+            ) { Text(if (switchingHere) "正在让相框进入$title…" else "让相框进入$title") }
         }
     }
 }

@@ -224,11 +224,11 @@ fun AiAlbumHost(
     val aiImageGridState = rememberLazyGridState()
     val stateHolder = rememberSaveableStateHolder()
     val route = AiAlbumRoute.entries.firstOrNull { it.name == routeName } ?: AiAlbumRoute.Home
-    val runtimeAiImages = aiImageUiState.images.mapIndexed { index, item ->
+    val runtimeAiImages = aiImageUiState.images.map { item ->
         AiImageRecord(
             id = item.id,
             category = DeviceMediaCategory.Ai,
-            name = "AI 图片 ${String.format(Locale.ROOT, "%03d", index + 1)}",
+            name = stableAiImageName(item.id),
             prompt = item.prompt,
             generatedAtLabel = formatAiImageTime(item.createdAtEpochMillis),
             modelLabel = item.model,
@@ -314,6 +314,7 @@ fun AiAlbumHost(
             connected = device.connection == DeviceConnectionState.Online,
             actionMessage = aiImageUiState.actionMessage,
             displayInProgress = aiImageUiState.activeJob?.state in setOf(DeviceJobState.Queued, DeviceJobState.Running),
+            displayCooldownSeconds = device.displayCooldownRemainingSeconds,
             onBack = back,
             onDisplay = { selectedAiImageId?.let(onDisplayAiImage) },
             onSaveToPhone = { selectedAiImageId?.let(onSaveAiImageToPhone) },
@@ -478,6 +479,9 @@ private fun formatAiImageTime(epochMillis: Long): String = if (epochMillis >= 1_
     "时间未记录"
 }
 
+private fun stableAiImageName(mediaId: String): String =
+    "AI 图片 · ${mediaId.removePrefix("ai-").takeLast(8).uppercase(Locale.ROOT)}"
+
 @Composable
 private fun AiAlbumHomeScreen(
     device: DeviceSnapshot,
@@ -492,6 +496,13 @@ private fun AiAlbumHomeScreen(
     listState: LazyListState,
     modifier: Modifier = Modifier,
 ) {
+    val currentImage = aiImages.firstOrNull { it.id == device.currentContent?.mediaId }
+    val screenContentLabel = when (aiCurrentDisplayPresentation(device)) {
+        AiCurrentDisplayPresentation.ModeCover -> "AI 相册模式提示画面"
+        AiCurrentDisplayPresentation.AiMedia -> currentImage?.name ?: "AI 相册图片"
+        AiCurrentDisplayPresentation.OtherFeature -> crossFeatureDisplayText(device.currentContent?.ownerFeature ?: device.activeFeature)
+        AiCurrentDisplayPresentation.Unavailable -> "AI 相册画面暂不可读取"
+    }
     Box(modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.TopCenter) {
         LazyColumn(
             state = listState,
@@ -500,13 +511,13 @@ private fun AiAlbumHomeScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             item {
-                ModeFeatureHeader("AI 相册", DeviceFeature.AiAlbum, device, modeSwitchState, onSwitchMode)
+                ModeFeatureHeader("AI 相册", DeviceFeature.AiAlbum, device, modeSwitchState, onSwitchMode, screenContentLabel)
             }
             item { ModeSwitchStatusCard(DeviceFeature.AiAlbum, modeSwitchState) }
             item {
                 AiCurrentDisplayCard(
                     device = device,
-                    currentAiImage = aiImages.firstOrNull { it.id == device.currentContent?.mediaId },
+                    currentAiImage = currentImage,
                     playback = playback,
                 )
             }
@@ -568,7 +579,7 @@ private fun AiPrimaryActionRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Box(
-            Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.primaryContainer),
+            Modifier.size(48.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
             contentAlignment = Alignment.Center,
         ) {
             Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
@@ -695,7 +706,7 @@ private fun AiCurrentDisplayCard(
                     nextTime?.let { "下一次切换：$it" } ?: "下一次切换：等待设备计时",
                     modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
         }
@@ -747,7 +758,7 @@ private fun XiaozhiInputCard(
                     Modifier
                         .size(48.dp)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.primaryContainer),
+                        .background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Outlined.AutoAwesome, null, tint = MaterialTheme.colorScheme.primary) }
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {

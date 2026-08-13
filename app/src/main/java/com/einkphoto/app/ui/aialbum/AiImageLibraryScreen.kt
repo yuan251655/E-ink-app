@@ -84,6 +84,7 @@ import com.einkphoto.app.core.device.DeviceCurrentContent
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.DeviceMediaCategory
 import com.einkphoto.app.ui.components.pressFeedbackClickable
+import com.einkphoto.app.ui.components.rememberDisplayCooldown
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -263,6 +264,7 @@ internal fun AiImageDetailScreen(
     connected: Boolean,
     actionMessage: String?,
     displayInProgress: Boolean,
+    displayCooldownSeconds: Int,
     onBack: () -> Unit,
     onDisplay: () -> Unit,
     onSaveToPhone: () -> Unit,
@@ -275,6 +277,7 @@ internal fun AiImageDetailScreen(
     var menuExpanded by rememberSaveable { mutableStateOf(false) }
     var showDeleteConfirmation by rememberSaveable { mutableStateOf(false) }
     val context = LocalContext.current
+    val cooldownSeconds = rememberDisplayCooldown(displayCooldownSeconds)
     val savePermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) onSaveToPhone() else localNotice = "未获得存储权限，无法保存到手机。"
     }
@@ -355,12 +358,16 @@ internal fun AiImageDetailScreen(
                         item {
                             Button(
                                 onClick = onDisplay,
-                                enabled = connected && !displayInProgress,
+                                enabled = connected && !displayInProgress && cooldownSeconds == 0,
                                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
                             ) {
                                 Icon(Icons.Outlined.Image, contentDescription = null)
                                 Spacer(Modifier.size(8.dp))
-                                Text(if (displayInProgress) "正在显示…" else "显示到相框")
+                                Text(when {
+                                    displayInProgress -> "正在显示…"
+                                    cooldownSeconds > 0 -> "冷却中（${cooldownSeconds}s）"
+                                    else -> "显示到相框"
+                                })
                             }
                             OutlinedButton(
                                 onClick = {
@@ -490,7 +497,12 @@ private fun AiImageCard(
                     }
                 }
                 Text(image.prompt ?: "未提供", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text("${image.generatedAtLabel} · ${formatAiImageSize(image.sizeBytes)}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                Text(
+                    listOf(image.generatedAtLabel.takeUnless { it == "时间未记录" }, formatAiImageSize(image.sizeBytes)).filterNotNull().joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                )
                 if (currentlyDisplayed) Text("当前显示", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold)
             }
         }
@@ -615,5 +627,5 @@ private fun AiImageLibraryCompactLargePreview() = EInkPhotoTheme(darkTheme = fal
 @Preview(name = "AI 图片详情 横屏", showBackground = true, widthDp = 720, heightDp = 360)
 @Composable
 private fun AiImageDetailLandscapePreview() = EInkPhotoTheme(darkTheme = false) {
-    AiImageDetailScreen(previewAiImages.first(), previewCurrentContent, true, null, false, {}, {}, {}, {}, {}, PaddingValues())
+    AiImageDetailScreen(previewAiImages.first(), previewCurrentContent, true, null, false, 0, {}, {}, {}, {}, {}, PaddingValues())
 }

@@ -1,4 +1,4 @@
-package com.einkphoto.app.ui.aialbum
+﻿package com.einkphoto.app.ui.aialbum
 
 import android.content.Context
 
@@ -7,19 +7,15 @@ import android.content.Context
  * easy to curate by hand; parsing occurs locally and never reaches the model
  * until the user edits and explicitly requests generation.
  */
-internal enum class AiPromptTemplateCategory(val title: String, private val heading: String) {
-    Landscape("风景", "风景模板"),
-    People("人物", "人物模板"),
-    Animals("动物", "动物模板"),
-    Artwork("绘画作品", "绘画作品模板"),
-    Daily("治愈日常", "治愈日常模板"),
-    Fantasy("幻想梦境", "幻想梦境模板"),
-    Anime("动漫人物", "动漫人物模板"),
-    Couple("情侣与纪念", "情侣与纪念模板");
-
-    companion object {
-        fun fromHeading(value: String): AiPromptTemplateCategory? = entries.firstOrNull { it.heading == value }
-    }
+internal enum class AiPromptTemplateCategory(val title: String) {
+    Landscape("风景"),
+    People("人物"),
+    Animals("动物"),
+    Artwork("绘画作品"),
+    Daily("治愈日常"),
+    Fantasy("幻想梦境"),
+    Anime("动漫人物"),
+    Couple("情侣与纪念"),
 }
 
 internal data class AiPromptTemplate(
@@ -29,53 +25,20 @@ internal data class AiPromptTemplate(
 )
 
 internal object AiPromptTemplateCatalog {
-    private const val assetName = "ai_prompt_templates.md"
     private const val templatesPerCategory = 80
 
-    fun load(context: Context): List<AiPromptTemplate> = runCatching {
-        context.assets.open(assetName).bufferedReader(Charsets.UTF_8).use { reader ->
-            val items = mutableListOf<AiPromptTemplate>()
-            var category: AiPromptTemplateCategory? = null
-            var id: String? = null
-            val lines = mutableListOf<String>()
+    @Suppress("UNUSED_PARAMETER")
+    fun load(context: Context): List<AiPromptTemplate> = buildDistinctCatalog()
 
-            fun flush() {
-                val activeCategory = category
-                val activeId = id
-                if (activeCategory != null && !activeId.isNullOrBlank() && lines.isNotEmpty()) {
-                    items += AiPromptTemplate(activeId, activeCategory, lines.joinToString("\n"))
-                }
-                id = null
-                lines.clear()
-            }
-
-            reader.forEachLine { raw ->
-                val line = raw.trim()
-                when {
-                    line.startsWith("## ") -> {
-                        flush()
-                        category = AiPromptTemplateCategory.fromHeading(line.removePrefix("## ").trim())
-                    }
-                    line.startsWith("### ") -> {
-                        flush()
-                        id = line.removePrefix("### ").trim()
-                    }
-                    id != null && line.isNotBlank() -> lines += line
+    private fun buildDistinctCatalog(): List<AiPromptTemplate> =
+        AiPromptTemplateCategory.entries.flatMap { category -> generatedTemplates(category, 0, templatesPerCategory) }
+            .also { templates ->
+                check(templates.size == AiPromptTemplateCategory.entries.size * templatesPerCategory)
+                check(templates.map { it.text }.distinct().size == templates.size)
+                AiPromptTemplateCategory.entries.forEach { category ->
+                    check(templates.count { it.category == category } == templatesPerCategory)
                 }
             }
-            flush()
-            completeCategories(items)
-        }
-    }.getOrDefault(emptyList())
-
-    private fun completeCategories(loaded: List<AiPromptTemplate>): List<AiPromptTemplate> =
-        AiPromptTemplateCategory.entries.flatMap { category ->
-            val existing = loaded.filter { it.category == category }
-                .mapIndexed { index, template ->
-                    template.copy(text = enrichPrompt(category, template.text, index))
-                }
-            existing + generatedTemplates(category, existing.size, templatesPerCategory - existing.size)
-        }
 
     private fun generatedTemplates(
         category: AiPromptTemplateCategory,
@@ -83,38 +46,55 @@ internal object AiPromptTemplateCatalog {
         count: Int,
     ): List<AiPromptTemplate> {
         val promptSet = promptSets.getValue(category)
+        val moments = categoryMoments.getValue(category)
         return (startIndex until (startIndex + count)).map { index ->
             val subject = promptSet.subjects[index / promptSet.scenes.size]
             val scene = promptSet.scenes[index % promptSet.scenes.size]
-            val style = promptSet.styles[index % promptSet.styles.size]
+            val style = promptSet.styles[(index * 3 + index / promptSet.styles.size) % promptSet.styles.size]
+            val moment = moments[index % moments.size]
+            val environment = environmentAccents[index / promptSet.scenes.size]
+            val treatment = styleTreatments[index / promptSet.styles.size]
             AiPromptTemplate(
                 id = "${promptSet.prefix}-${(index + 1).toString().padStart(3, '0')}",
                 category = category,
-                text = enrichPrompt(
-                    category = category,
-                    base = "创作一幅以$subject 为主体的画面。场景要求：$scene。视觉风格：$style。",
+                text = renderPrompt(
                     index = index,
+                    subjectMoment = "$subject，$moment",
+                    scene = "$scene；$environment",
+                    style = "$style，$treatment",
+                    detail = categoryDetails.getValue(category),
+                    textRule = textInstruction(category, index),
                 ),
             )
         }
     }
 
-    private fun enrichPrompt(
-        category: AiPromptTemplateCategory,
-        base: String,
+    private fun renderPrompt(
         index: Int,
-    ): String = buildString {
-        append(base.trim().trimEnd('。', '，', ',', ';', '；'))
-        append("。画幅为横向 5:3，采用${compositions[index % compositions.size]}，")
-        append("主体位于${subjectPositions[index % subjectPositions.size]}，轮廓完整清晰，不被边缘裁切；")
-        append("前景、中景和远景层次分明，并利用${depthDetails[index % depthDetails.size]}增强空间纵深。")
-        append(categoryDetails.getValue(category))
-        append("光线采用${lighting[index % lighting.size]}，主光方向明确，阴影柔和且保留细节；")
-        append("整体配色以${palettes[index % palettes.size]}为主，控制色彩数量和饱和度，形成清晰的冷暖关系。")
-        append("材质、衣物、毛发、植物、建筑和环境纹理应符合真实结构，边缘干净，细节丰富但不堆叠。")
-        append("最终画面需适合 800×480 六色电子墨水屏显示：强化主体与背景的明度区分，避免大面积灰雾、过暗阴影、细碎噪点和低对比元素。")
-        append(textInstruction(category, index))
-        append("不要水印、品牌标志、界面元素、边框、随机字母、乱码或与主题无关的文字。")
+        subjectMoment: String,
+        scene: String,
+        style: String,
+        detail: String,
+        textRule: String,
+    ): String {
+        val composition = compositions[index % compositions.size]
+        val light = lighting[index % lighting.size]
+        val palette = palettes[index % palettes.size]
+        val core = when (index % 12) {
+            0 -> "$subjectMoment。镜头来到$scene，以${composition}组织画面；采用$style，$light，色彩选择$palette。"
+            1 -> "在$scene，记录$subjectMoment。画面运用$style，由${light}塑造层次，并以${palette}完成$composition。"
+            2 -> "把${scene}作为故事舞台：$subjectMoment。用${style}呈现，${composition}配合$light，主色关系为$palette。"
+            3 -> "$scene。此刻，$subjectMoment；视觉语言取自$style，借${light}和${palette}形成$composition。"
+            4 -> "从${composition}展开一段画面叙事，内容是$subjectMoment，环境设在$scene。表现方式为$style，使用${light}与$palette。"
+            5 -> "描绘$subjectMoment，让${scene}自然交代前因后果。选择$style，不采用普通棚拍感；以${light}统领$palette。"
+            6 -> "横向画面里，${scene}逐层展开，$subjectMoment。以${style}刻画关键细节，构图采用$composition，光色为$light、$palette。"
+            7 -> "故事发生于$scene，视觉焦点落在$subjectMoment。整体不是素材拼贴，而以$style、${light}和${palette}形成完整作品。"
+            8 -> "先用${scene}建立空间，再表现$subjectMoment。采用${composition}控制视线，以${style}结合$light，色调限定为$palette。"
+            9 -> "$subjectMoment；周围的${scene}提供叙事线索。画面追求${style}的质感，使用$composition、${light}和$palette。"
+            10 -> "设计一幕关于“$subjectMoment”的场景，地点与细节为$scene。艺术处理选择$style，${light}照亮主体，${palette}维持整体秩序。"
+            else -> "让观者先看到$subjectMoment，随后从${scene}读出故事。以${style}完成$composition，光线设为$light，配色采用$palette。"
+        }
+        return "$core$detail${displayRules[index % displayRules.size]}$textRule"
     }
 
     private fun textInstruction(category: AiPromptTemplateCategory, index: Int): String = when {
@@ -137,10 +117,87 @@ internal object AiPromptTemplateCatalog {
         "三分法构图", "中央稳定构图", "对角线引导构图", "低机位广角构图",
         "平视中景构图", "大面积留白构图", "框景式构图", "视觉动线由近及远的构图",
     )
-    private val subjectPositions = listOf("画面左侧三分之一", "画面右侧三分之一", "视觉中心略偏下", "视觉中心略偏上")
-    private val depthDetails = listOf("前景遮挡与远景空气透视", "道路、河流或光影形成的引导线", "大小比例变化与轻微景深", "疏密变化和清晰度递减")
     private val lighting = listOf("清晨柔和侧光", "傍晚金色逆光", "阴天均匀漫射光", "窗边自然光", "月光与暖色环境光", "穿过云层或树叶的体积光", "电影感轮廓光", "柔和顶光与局部反射光")
     private val palettes = listOf("奶油白、浅粉与暖棕", "天空蓝、云白与少量暖黄", "墨绿、米白与木质棕", "淡紫、月白与深蓝", "樱花粉、象牙白与灰蓝", "橙红、金黄与沉稳深蓝", "青绿、浅灰与柔和米色", "砖红、墨黑与复古米黄")
+    private val environmentAccents = listOf(
+        "前景散落被风吹动的细小物件，远处保留开阔留白",
+        "一条弯曲路径连接近景与远景，空气透视随距离递减",
+        "局部倒影回应主体，边缘处只留下少量环境线索",
+        "高低错落的遮挡关系建立三层空间，背景不过度虚化",
+        "天气留下可见痕迹，材质表面同时呈现干湿与新旧差异",
+        "远方安排一个很小的叙事伏笔，近处纹理清楚但不喧宾夺主",
+        "环境中的风向、植物和衣物褶皱保持一致，空间尺度可信",
+        "利用建筑或自然形成框景，画外空间仍让人产生联想",
+        "地面留有此前事件的痕迹，背景人物只承担尺度参照",
+        "光影越过一件半透明物体，在墙面形成不规则投影",
+        "近景设置一处被触碰过的细节，让静态空间带有时间感",
+        "主场景之外露出一小段相邻空间，暗示故事仍在继续",
+        "天空、地面与主体分别占据不同明度区间，层次一眼可辨",
+        "一处颜色呼应从主体延伸至远景，但不形成刻意对称",
+        "环境中只有一个方向性动态，其余元素保持安静稳定",
+        "以不同尺度的重复形状串起视线，避免装饰性堆砌",
+        "背景保留真实使用痕迹，物件朝向符合人物刚才的动作",
+        "让一束反射光照亮通常被忽略的角落，形成第二阅读点",
+        "边缘区域逐步降低信息密度，把观看注意力送回主体",
+        "远近材质使用不同颗粒尺度，增强空间而非依赖模糊",
+    )
+    private val styleTreatments = listOf(
+        "保留克制颗粒与清楚边缘", "强调透明叠色和纸张呼吸感", "用长短笔触区分主体与背景", "以硬边剪影衬托柔和内部细节",
+        "加入轻微年代印刷质感但不做旧过度", "让局部高光成为视觉节奏", "采用疏密变化代替繁复装饰", "把材质差异作为主要表现线索",
+        "控制景深而不模糊关键叙事物件", "以冷暖小面积互补建立安静张力",
+    )
+    private val displayRules = listOf(
+        "横向 5:3，适配六色电子纸，主体边界和明度层次清楚。",
+        "按 800×480 横屏设计，减少灰雾与细碎噪点，保留大色块关系。",
+        "画面需适合六色墨水屏长期展示，暗部不糊成一片，亮部不过曝。",
+        "保持横向相框比例，重要内容远离边缘，有限色阶下仍能辨认。",
+        "为电子纸强化轮廓、冷暖和前后层次，不依赖细微渐变表达主题。",
+        "最终呈现简洁耐看，避免低对比背景吞没主体，尺寸比例为 5:3。",
+        "控制颜色数量，让六色显示仍保留故事重点和材质区别。",
+        "采用适合电子墨水屏的清晰块面，避免过黑阴影和密集高频纹理。",
+    )
+    private val categoryMoments = mapOf(
+        AiPromptTemplateCategory.Landscape to listOf(
+            "一阵风刚把雾推离水面", "云隙光正在沿山脊移动", "骤雨停歇后第一束光落下", "潮水漫过礁石留下白色水线",
+            "候鸟掠过天空改变了原本的宁静", "远处炊烟升起并被风拉长", "融雪汇成细流穿过石缝", "落叶旋转着停在潮湿路面",
+            "夜色降临时地平线仍保留余晖", "薄冰裂开后映出清澈水色",
+        ),
+        AiPromptTemplateCategory.People to listOf(
+            "正俯身修好一件陪伴多年的旧物", "刚收到远方来信，读到一半停下来微笑", "迎着风整理被吹乱的衣领", "把最后一笔颜色落在尚未完成的作品上",
+            "弯腰拾起孩子遗落的纸飞机", "在列车到站前回头确认站牌", "捧住一束快被雨打湿的鲜花", "借窗上倒影悄悄整理表情",
+            "为陌生旅人指向地图上的岔路", "吹灭桌边蜡烛后静静听雨",
+        ),
+        AiPromptTemplateCategory.Animals to listOf(
+            "忽然发现草叶间晃动的小昆虫", "叼回玩具却故意绕开主人伸出的手", "用鼻尖试探刚落下的第一片雪", "跃过浅水时溅起一串明亮水珠",
+            "守在幼崽身边警觉地望向远处", "从睡梦中醒来伸展四肢", "循着气味钻进半开的野餐篮", "在倒影前歪头观察另一个自己",
+            "追随一束移动的光跑过地面", "把找到的小果实藏进树根缝隙",
+        ),
+        AiPromptTemplateCategory.Artwork to listOf(
+            "让主形体从大片留白中缓慢显现", "以一条连续线串联彼此分离的物件", "用刮刀露出底层颜色形成时间痕迹", "把倒影处理成与现实不同的第二叙事",
+            "让颜料自然流淌并在边缘凝结", "以重复纹样建立安静节拍", "让纸张纤维参与云雾和水面的塑造", "用不完整轮廓邀请观者补全画面",
+            "将日常物件重新排列成象征性静物", "通过厚薄不同的笔触表现光线经过",
+        ),
+        AiPromptTemplateCategory.Daily to listOf(
+            "早餐刚吃到一半，热气仍停留在杯口", "洗好的床单被风吹出柔软弧线", "新买的花还没修剪，包装纸散在桌边", "唱片播放到末尾，唱针发出轻微回响",
+            "烤箱计时器响起，面包表面刚刚上色", "雨伞靠在门边滴水，鞋印延伸进屋", "午睡醒来，书页被窗风翻到下一章", "灯串亮起后，阳台植物投下细长影子",
+            "手账写到一半，胶带和照片尚未收好", "夜归的人把钥匙放下，玄关小灯随即亮起",
+        ),
+        AiPromptTemplateCategory.Fantasy to listOf(
+            "漂浮大陆的锚链突然从云层中升起", "沉睡巨兽呼吸时让整片森林明暗起伏", "星星坠入湖中化成一群透明游鱼", "无人的列车沿月环驶向倒悬城市",
+            "花朵在脚步经过后依次点亮", "钟楼敲响时天空短暂出现第二轮太阳", "纸船载着微型村庄穿过银河瀑布", "古老门扉打开后露出四季同时存在的庭院",
+            "鲸群从云海跃出并拖曳发光雨幕", "地图上的墨线自行生长成真实道路",
+        ),
+        AiPromptTemplateCategory.Anime to listOf(
+            "完成一次符合原作性格的小小善举", "在熟悉伙伴出现前独自处理突发麻烦", "暂时放下使命，认真体验普通人的一天", "用标志性能力化解一场并不宏大的危机",
+            "发现来自另一段剧情时间线的旧物", "在节日摊位前做出令人意外的选择", "经历战斗后安静整理重要道具", "与原作中的象征性环境产生新互动",
+            "为了守护身后的人摆出经典姿态", "在黄昏告别时露出符合角色经历的表情",
+        ),
+        AiPromptTemplateCategory.Couple to listOf(
+            "交换刚写好的信，却约定回家后再拆开", "在错过末班车后分享同一副耳机", "一起修复旅行中摔裂的小纪念品", "隔着玻璃为对方比出只有两人懂的手势",
+            "把两张不同城市的车票夹进同一本书", "争着替对方挡雨，最后都淋湿了肩膀", "悄悄把生日蜡烛摆成相识年份", "在人群走散后凭熟悉的围巾找到彼此",
+            "将共同养大的植物搬到新家窗边", "收拾旧照片时同时指向同一个瞬间",
+        ),
+    )
     private val categoryDetails = mapOf(
         AiPromptTemplateCategory.Landscape to "突出自然尺度、天气变化和地貌特征，植被分布合理，天空与地面比例舒展；",
         AiPromptTemplateCategory.People to "人物面部自然，眼神有明确落点，手指数量和关节正确，动作符合重心，服装褶皱跟随姿态；",

@@ -53,6 +53,12 @@ fun FeaturePlaceholderScreen(
     }
     val owner = device.currentContent?.ownerFeature
     val ownsContent = owner == target
+    val screenContentLabel = if (!ownsContent) crossFeatureDisplayText(owner ?: device.activeFeature) else when (device.currentContent?.kind) {
+        DeviceContentKind.ModeCover -> "${destination.title}模式提示画面"
+        DeviceContentKind.Media -> "${destination.title}图片"
+        DeviceContentKind.Dashboard -> "信息看板"
+        else -> "相框当前画面暂不可读取"
+    }
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -67,7 +73,7 @@ fun FeaturePlaceholderScreen(
                 .padding(horizontal = 16.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            ModeFeatureHeader(destination.title, target, device, modeSwitchState, onSwitchMode)
+            ModeFeatureHeader(destination.title, target, device, modeSwitchState, onSwitchMode, screenContentLabel)
             ModeSwitchStatusCard(target, modeSwitchState)
             Text("当前画面", style = MaterialTheme.typography.titleMedium)
             OutlinedCard(modifier = Modifier.fillMaxWidth().aspectRatio(5f / 3f)) {

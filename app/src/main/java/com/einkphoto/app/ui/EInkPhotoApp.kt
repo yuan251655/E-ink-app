@@ -19,6 +19,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +42,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +82,7 @@ import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceSession
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.DeviceConnectionState
+import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.core.device.DeviceGlobalNoticeBus
 import com.einkphoto.app.feature.settings.network.LanNetworkRepository
 import com.einkphoto.app.feature.settings.storage.LanStorageRepository
@@ -108,7 +111,7 @@ import com.einkphoto.app.feature.aialbum.AiGenerationViewModel
 import com.einkphoto.app.feature.aialbum.AiGenerationRepository
 import com.einkphoto.app.feature.aialbum.AiPlaybackViewModel
 import com.einkphoto.app.feature.mode.ModeSwitchPhase
-import com.einkphoto.app.ui.components.ModeSwitchGlobalStatus
+import com.einkphoto.app.feature.localalbum.model.ConversionStage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 
@@ -179,6 +182,7 @@ private fun EInkPhotoAppContent(
     val session = remember(transport) { LanDeviceSession(transport) }
     val snapshot by session.snapshot.collectAsState()
     val localAlbumRuntime = rememberLocalAlbumDemoRuntime(session)
+    val localAlbumState by localAlbumRuntime.viewModel.uiState.collectAsState()
     val modeSwitchViewModel: ModeSwitchViewModel = viewModel(
         key = "device-mode-switch",
         factory = remember(session) {
@@ -299,6 +303,42 @@ private fun EInkPhotoAppContent(
         showNetworkConfiguration || showStorageManagement || showPowerSettings || showAudioSettings ||
             showDeviceDiagnostics || showAppUpdate
         )
+    val globalTask = when {
+        modeSwitchState.switching -> GlobalTaskPresentation(
+            message = modeSwitchState.message ?: "正在切换相框模式",
+            destination = modeSwitchState.target?.destination() ?: selected,
+        )
+        aiGenerationState.active -> GlobalTaskPresentation(
+            message = aiGenerationState.message ?: "正在处理 AI 图片",
+            destination = AppDestination.AiAlbum,
+        )
+        aiImageState.activeJob?.state in setOf(DeviceJobState.Queued, DeviceJobState.Running) -> GlobalTaskPresentation(
+            message = aiImageState.actionMessage ?: "正在刷新电子纸",
+            destination = AppDestination.AiAlbum,
+        )
+        localAlbumState.batchSaveActive -> GlobalTaskPresentation(
+            message = "正在保存本地图片 ${localAlbumState.batchSaveCompleted}/${localAlbumState.batchSaveTotal}",
+            destination = AppDestination.LocalAlbum,
+        )
+        localAlbumState.conversionDrafts.values.any { it.stage in setOf(
+            ConversionStage.Queued,
+            ConversionStage.Preparing,
+            ConversionStage.RenderingPreview,
+            ConversionStage.Quantizing,
+            ConversionStage.Validating,
+            ConversionStage.Uploading,
+            ConversionStage.DeviceValidating,
+            ConversionStage.Committing,
+        ) } -> GlobalTaskPresentation(
+            message = "正在转换并保存本地图片",
+            destination = AppDestination.LocalAlbum,
+        )
+        localAlbumState.displayJob?.state in setOf(DeviceJobState.Queued, DeviceJobState.Running) -> GlobalTaskPresentation(
+            message = "正在刷新电子纸",
+            destination = AppDestination.LocalAlbum,
+        )
+        else -> null
+    }
     BackHandler(enabled = settingsDetailVisible) {
         showNetworkConfiguration = false
         showStorageManagement = false
@@ -379,7 +419,7 @@ private fun EInkPhotoAppContent(
                 )
                 if (!settingsDetailVisible) {
                     HeaderStatusBar(snapshot, powerSnapshot)
-                    ModeSwitchGlobalStatus(modeSwitchState)
+                    GlobalTaskCapsule(globalTask) { onDestinationSelected(it.destination) }
                 }
                 }
             },
@@ -513,6 +553,41 @@ private fun EInkPhotoAppContent(
                     fontWeight = FontWeight.SemiBold,
                     lineHeight = 24.sp,
                 )
+            }
+        }
+    }
+}
+
+private data class GlobalTaskPresentation(
+    val message: String,
+    val destination: AppDestination,
+)
+
+@Composable
+private fun GlobalTaskCapsule(task: GlobalTaskPresentation?, onClick: (GlobalTaskPresentation) -> Unit) {
+    AnimatedVisibility(
+        visible = task != null,
+        enter = fadeIn(tween(180)) + scaleIn(tween(240), initialScale = 0.97f),
+        exit = fadeOut(tween(160)) + scaleOut(tween(180), targetScale = 0.98f),
+    ) {
+        task?.let { current ->
+            Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp), contentAlignment = Alignment.Center) {
+                Surface(
+                    modifier = Modifier.clickable { onClick(current) },
+                    shape = RoundedCornerShape(999.dp),
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                    shadowElevation = 5.dp,
+                ) {
+                    Row(
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        CircularProgressIndicator(Modifier.width(18.dp).height(18.dp), strokeWidth = 2.dp)
+                        Text(current.message, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                    }
+                }
             }
         }
     }

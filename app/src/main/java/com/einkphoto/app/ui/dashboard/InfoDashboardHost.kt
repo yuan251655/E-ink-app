@@ -107,6 +107,7 @@ import com.einkphoto.app.ui.components.ModeSwitchStatusCard
 import com.einkphoto.app.ui.components.crossFeatureDisplayText
 import com.einkphoto.app.ui.components.modeCoverDrawableRes
 import com.einkphoto.app.ui.components.hierarchicalPageTransition
+import com.einkphoto.app.ui.components.rememberDisplayCooldown
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
@@ -431,6 +432,12 @@ private fun DashboardOverviewScreen(
     val target = DeviceFeature.InfoDashboard
     val ownsContent = device.currentContent?.ownerFeature == target
     val isActive = device.activeFeature == target
+    val screenContentLabel = when {
+        ownsContent && device.currentContent?.kind == DeviceContentKind.ModeCover -> "信息看板模式提示画面"
+        ownsContent && device.currentContent?.kind == DeviceContentKind.Dashboard -> "信息看板 · ${selectedLayout.title}"
+        ownsContent -> "信息看板画面暂不可读取"
+        else -> crossFeatureDisplayText(device.currentContent?.ownerFeature ?: device.activeFeature)
+    }
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -440,7 +447,7 @@ private fun DashboardOverviewScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Spacer(Modifier.height(4.dp))
-        ModeFeatureHeader("信息看板", target, device, modeSwitchState, onSwitchMode)
+        ModeFeatureHeader("信息看板", target, device, modeSwitchState, onSwitchMode, screenContentLabel)
         ModeSwitchStatusCard(target, modeSwitchState)
         DashboardCurrentPanel(
             device = device,
@@ -467,6 +474,7 @@ private fun DashboardOverviewScreen(
             message = refreshMessage,
             hasUnsyncedDraft = hasUnsyncedDraft,
             prepared = prepared,
+            displayCooldownSeconds = device.displayCooldownRemainingSeconds,
             onRefresh = onMarkRefreshRequested,
         )
         val contentAction = if (selectedLayout == DashboardLayoutOption.WeatherDate) onOpenWeather else onOpenToday
@@ -696,8 +704,11 @@ private fun DraftBanner(
     message: String?,
     hasUnsyncedDraft: Boolean,
     prepared: Boolean,
+    displayCooldownSeconds: Int,
     onRefresh: () -> Unit,
 ) {
+    val cooldownSeconds = rememberDisplayCooldown(displayCooldownSeconds)
+    val displayCoolingDown = prepared && cooldownSeconds > 0
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.primaryContainer,
@@ -721,8 +732,13 @@ private fun DraftBanner(
                 style = MaterialTheme.typography.bodyMedium,
             )
             if (isActive && message != "已显示到相框") {
-                TextButton(onClick = onRefresh, enabled = !isRefreshing) {
-                    Text(if (isRefreshing) "处理中…" else if (prepared) "显示到相框" else "生成并保存")
+                TextButton(onClick = onRefresh, enabled = !isRefreshing && !displayCoolingDown) {
+                    Text(when {
+                        isRefreshing -> "处理中…"
+                        displayCoolingDown -> "${cooldownSeconds}s 后可显示"
+                        prepared -> "显示到相框"
+                        else -> "生成并保存"
+                    })
                 }
             }
         }

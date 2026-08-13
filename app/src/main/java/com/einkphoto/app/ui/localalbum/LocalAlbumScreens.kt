@@ -1,7 +1,13 @@
 package com.einkphoto.app.ui.localalbum
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -17,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -55,10 +62,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -107,6 +116,7 @@ import com.einkphoto.app.ui.components.AppMessageKind
 import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
 import com.einkphoto.app.ui.components.crossFeatureDisplayText
+import com.einkphoto.app.ui.components.rememberDisplayCooldown
 import com.einkphoto.app.ui.components.modeCoverDrawableRes
 import com.einkphoto.app.feature.mode.ModeSwitchUiState
 import com.einkphoto.app.core.device.DeviceContentKind
@@ -131,6 +141,12 @@ internal fun LocalAlbumOverviewScreen(
     val ownsCurrentContent = currentOwner == DeviceFeature.LocalAlbum
     val showingModeCover = ownsCurrentContent && state.device.currentContent?.kind == DeviceContentKind.ModeCover
     val currentMedia = state.currentMedia.takeIf { ownsCurrentContent }
+    val screenContentLabel = when {
+        showingModeCover -> "本地相册模式提示画面"
+        currentMedia != null -> currentMedia.displayName
+        ownsCurrentContent -> "本地相册画面暂不可读取"
+        else -> crossFeatureDisplayText(currentOwner)
+    }
     // The effect is disposed automatically when this overview leaves composition. The device is
     // authoritative; polling keeps the status card in sync after an automatic display change.
     LaunchedEffect(Unit) {
@@ -143,7 +159,7 @@ internal fun LocalAlbumOverviewScreen(
         title = "本地相册",
         subtitle = "管理手机导入与设备中的照片",
         headerContent = {
-            ModeFeatureHeader("本地相册", DeviceFeature.LocalAlbum, state.device, modeSwitchState, onSwitchMode)
+            ModeFeatureHeader("本地相册", DeviceFeature.LocalAlbum, state.device, modeSwitchState, onSwitchMode, screenContentLabel)
         },
     ) {
         item { ModeSwitchStatusCard(DeviceFeature.LocalAlbum, modeSwitchState) }
@@ -688,7 +704,7 @@ internal fun LocalConversionTaskScreen(
     val orderedDrafts = state.phoneSources.mapNotNull { state.conversionDrafts[it.sourceId] }
     ScreenList("本地转换任务", "图片处理与保存状态", onBack) {
         item {
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         if (state.conversionRunning) "正在处理照片" else "处理结果",
@@ -798,6 +814,7 @@ internal fun MediaDetailScreen(
     val displayInProgress = displayJob?.state == DeviceJobState.Queued || displayJob?.state == DeviceJobState.Running
     val displaySucceeded = displayJob?.state == DeviceJobState.Success || media.id == state.currentDisplay.mediaId
     val displayFailed = displayJob?.state in setOf(DeviceJobState.Failed, DeviceJobState.Cancelled, DeviceJobState.TimedOut)
+    val cooldownSeconds = rememberDisplayCooldown(state.device.displayCooldownRemainingSeconds)
     if (confirmDelete) {
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
@@ -847,12 +864,13 @@ internal fun MediaDetailScreen(
             Button(
                 onClick = { onDisplay(afterDisplay) },
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
-                enabled = !state.actionsLocked && !displayInProgress && !displaySucceeded,
+                enabled = !state.actionsLocked && !displayInProgress && !displaySucceeded && cooldownSeconds == 0,
             ) {
                 Text(
                     when {
                         displayInProgress -> "正在显示…"
                         displaySucceeded -> "已显示到相框"
+                        cooldownSeconds > 0 -> "冷却中（${cooldownSeconds}s）"
                         displayFailed -> "重新显示到相框"
                         else -> "显示到相框"
                     },
@@ -1087,6 +1105,7 @@ internal fun BatchManageScreen(state: LocalAlbumUiState, viewModel: LocalAlbumVi
 }
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun ScreenList(
     title: String,
     subtitle: String,
@@ -1094,15 +1113,24 @@ private fun ScreenList(
     headerContent: (@Composable () -> Unit)? = null,
     content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit,
 ) {
+    val listState = rememberLazyListState()
+    val headerCollapsed by remember(listState) {
+        derivedStateOf { listState.canScrollBackward }
+    }
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 16.dp, vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item {
-            if (headerContent != null) headerContent()
-            else if (onBack != null) SubpageHeader(title, subtitle, onBack)
-            else {
+        if (headerContent != null) {
+            item { headerContent() }
+        } else if (onBack != null) {
+            stickyHeader {
+                SubpageHeader(title, subtitle, onBack, collapsed = headerCollapsed)
+            }
+        } else {
+            item {
                 Text(title, style = MaterialTheme.typography.headlineSmall)
                 Text(subtitle, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
@@ -1120,16 +1148,29 @@ private fun SubpageHeader(
     action: String? = null,
     onAction: (() -> Unit)? = null,
     actionEnabled: Boolean = true,
+    collapsed: Boolean = false,
 ) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+    val verticalPadding by animateDpAsState(if (collapsed) 0.dp else 4.dp, label = "subpage-header-padding")
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.background.copy(alpha = 0.96f),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(vertical = verticalPadding), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+            }
+            Column(Modifier.weight(1f)) {
+                Text(title, style = if (collapsed) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge)
+                AnimatedVisibility(
+                    visible = !collapsed,
+                    enter = fadeIn(),
+                    exit = fadeOut() + shrinkVertically(),
+                ) {
+                    Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (action != null && onAction != null) TextButton(onClick = onAction, enabled = actionEnabled, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
         }
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge)
-            Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        if (action != null && onAction != null) TextButton(onClick = onAction, enabled = actionEnabled, modifier = Modifier.heightIn(min = 48.dp)) { Text(action) }
     }
 }
 

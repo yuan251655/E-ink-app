@@ -23,7 +23,7 @@ class AiGenerationViewModel(
         viewModelScope.launch {
             val history = runCatching { repository.loadHistory() }.getOrDefault(emptyList())
             mutableState.value = mutableState.value.copy(history = history)
-            // A process restart must not make a billable device task disappear.
+            // Restore unfinished local history without silently submitting a second billable request.
             history.firstOrNull { it.saveStatus in setOf(AiGenerationSaveStatus.WaitingToSubmit, AiGenerationSaveStatus.Generating, AiGenerationSaveStatus.Saving) }
                 ?.let { item ->
                     // Do not route the durable startup recovery through the UI retry guard.
@@ -65,6 +65,14 @@ class AiGenerationViewModel(
                 return@launch
             }
             val preview = result.getOrThrow()
+            updateHistory(historyId) {
+                it.copy(
+                    saveStatus = AiGenerationSaveStatus.PreviewReady,
+                    preview = preview,
+                    remoteJobId = null,
+                    failureReason = null,
+                )
+            }
             mutableState.value = AiGenerationUiState(
                 phase = AiGenerationPhase.PreviewReady,
                 message = "预览已生成并保存在手机。确认后才会转换并上传到 AI 相册。",
@@ -74,7 +82,6 @@ class AiGenerationViewModel(
                 preview = preview,
                 history = mutableState.value.history,
             )
-            updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.PreviewReady, preview = preview, remoteJobId = null, failureReason = null) }
         }
     }
 
@@ -111,6 +118,14 @@ class AiGenerationViewModel(
                 return@launch
             }
             val preview = result.getOrThrow()
+            updateHistory(historyId) {
+                it.copy(
+                    saveStatus = AiGenerationSaveStatus.PreviewReady,
+                    preview = preview,
+                    remoteJobId = null,
+                    failureReason = null,
+                )
+            }
             val ready = AiGenerationUiState(
                 phase = AiGenerationPhase.PreviewReady,
                 message = "预览已生成并保存在手机。确认后才会转换并上传到 AI 相册。",
@@ -121,7 +136,6 @@ class AiGenerationViewModel(
                 history = mutableState.value.history,
             )
             mutableState.value = ready
-            updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.PreviewReady, preview = preview, remoteJobId = null, failureReason = null) }
         }
     }
 
@@ -138,7 +152,7 @@ class AiGenerationViewModel(
         Log.i("AiGenerationFlow", "resume waiting message=${item.id.takeLast(12)}")
         mutableState.value = AiGenerationUiState(
             phase = AiGenerationPhase.CreatingPreview,
-            message = "正在重新确认相框状态…",
+            message = "正在恢复手机上的生成请求…",
             prompt = item.prompt,
             historyId = item.id,
             history = mutableState.value.history,
@@ -180,6 +194,14 @@ class AiGenerationViewModel(
             return
         }
         val preview = result.getOrThrow()
+        updateHistory(historyId) {
+            it.copy(
+                saveStatus = AiGenerationSaveStatus.PreviewReady,
+                preview = preview,
+                remoteJobId = null,
+                failureReason = null,
+            )
+        }
         mutableState.value = AiGenerationUiState(
             phase = AiGenerationPhase.PreviewReady,
             message = "预览已生成并保存在手机。确认后才会转换并上传到 AI 相册。",
@@ -189,10 +211,7 @@ class AiGenerationViewModel(
             preview = preview,
             history = mutableState.value.history,
         )
-        updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.PreviewReady, preview = preview, remoteJobId = null, failureReason = null) }
     }
-
-    private fun requestIdFor(historyId: String): String = "ai-preview-$historyId".take(64)
 
     /** Must only be exposed by the UI after [AiGenerationPhase.PreviewReady]. */
     fun confirmSave() {
@@ -224,7 +243,7 @@ class AiGenerationViewModel(
 
     fun dismissResult() {
         if (mutableState.value.active) return
-        mutableState.value = AiGenerationUiState()
+        mutableState.value = AiGenerationUiState(history = mutableState.value.history)
     }
 
     /** Resume a device-owned pending job after App process recreation. Never creates a new task. */
@@ -271,7 +290,7 @@ class AiGenerationViewModel(
         }
     }
 
-    /** Stops local tracking and removes the private preview. The device-side job is not cancelled. */
+    /** Stops local tracking and removes the private preview. */
     fun discardHistory(historyId: String) {
         val current = mutableState.value
         val item = current.history.firstOrNull { it.id == historyId } ?: return
@@ -279,134 +298,6 @@ class AiGenerationViewModel(
         viewModelScope.launch {
             persistHistory(item.copy(saveStatus = AiGenerationSaveStatus.Cancelled, preview = null))
         }
-    }
-
-    /**
-     * A busy reply means the App has no authority to infer failure or cancel
-     * anything. Ask the device for its single active job and restore that
-     * device-owned task only when the endpoint confirms one exists.
-     */
-    private suspend fun recoverActiveTaskAfterBusy() {
-        val history = mutableState.value.history
-        repository.activeJob().onSuccess { active ->
-            if (active == null) {
-                mutableState.value = AiGenerationUiState(
-                    message = "相框上的生成任务已结束，可以重新尝试。",
-                    history = history,
-                )
-                return@onSuccess
-            }
-            val prompt = active.promptSummary.ifBlank { "正在恢复相框上的生成任务" }
-            mutableState.value = AiGenerationUiState(
-                message = "已找到相框正在处理的任务，正在继续查询…",
-                history = history,
-            )
-            persistHistory(
-                AiGenerationHistoryItem(
-                    id = active.jobId,
-                    prompt = prompt,
-                    createdAtEpochMillis = history.firstOrNull { it.id == active.jobId }?.createdAtEpochMillis
-                        ?: System.currentTimeMillis(),
-                    saveStatus = AiGenerationSaveStatus.Generating,
-                    preview = null,
-                    remoteJobId = active.jobId,
-                ),
-            )
-            // Reuse the normal job polling path; it does not create another
-            // generation request or change the device-side task.
-            continueQuery(active.jobId)
-        }.onFailure {
-            mutableState.value = AiGenerationUiState(
-                message = "相框正在处理任务，但暂时无法读取进度。请稍后再次打开本页继续查询。",
-                history = history,
-            )
-        }
-    }
-
-    private suspend fun awaitPreview(jobId: String, prompt: String, historyId: String) {
-        repeat(MAX_POLL_ATTEMPTS) {
-            val jobResult = repository.job(jobId)
-            if (jobResult.isFailure) {
-                if (recoverLostTerminalPreview(jobId, prompt, historyId)) return
-                markPendingUnknown(jobId, prompt, historyId)
-                return
-            }
-            val job = jobResult.getOrThrow()
-            if (job.inProgress) {
-                mutableState.value = AiGenerationUiState(
-                    phase = AiGenerationPhase.GeneratingPreview,
-                    message = previewPhaseText(job.phase, job.progressPercent),
-                    prompt = prompt,
-                    historyId = historyId,
-                    jobId = jobId,
-                    history = mutableState.value.history,
-                )
-                delay(POLL_INTERVAL_MS)
-                return@repeat
-            }
-            if (job.completed && (job.phase == "preview_ready" || job.phase == "generated" || job.phase == "completed")) {
-                val previewResult = repository.downloadPreview(jobId)
-                if (previewResult.isFailure) {
-                    if (recoverLostTerminalPreview(jobId, prompt, historyId)) return
-                    if (previewResult.exceptionOrNull()?.message == "preview_decode_failed") {
-                        fail(
-                            prompt = prompt,
-                            message = "相框收到的生成图片不完整，无法预览或转换保存。本次任务已结束，不会自动重新生成或再次扣费。",
-                            historyId = historyId,
-                        )
-                        return
-                    }
-                    fail(prompt, "预览已生成，但暂时无法下载到手机；请稍后继续查询，不会自动重新生成", historyId = historyId)
-                    return
-                }
-                val previewFile = previewResult.getOrThrow()
-                val ready = AiGenerationUiState(
-                    phase = AiGenerationPhase.PreviewReady,
-                    message = "预览已生成。确认后才会转换并保存到 AI 相册。",
-                    prompt = prompt,
-                    historyId = historyId,
-                    jobId = jobId,
-                    preview = AiGenerationPreview(jobId, prompt, previewFile.uri, previewFile.mimeType, previewFile.sizeBytes),
-                    history = mutableState.value.history,
-                )
-                mutableState.value = ready
-                updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.PreviewReady, preview = ready.preview, remoteJobId = jobId, failureReason = null) }
-                return
-            }
-            fail(prompt, generationFailureMessage(job.errorCode), historyId, job.errorCode)
-            return
-        }
-        mutableState.value = AiGenerationUiState(
-            phase = AiGenerationPhase.GeneratingPreview,
-            message = "生成仍在相框端继续处理。返回或重启 App 后会自动恢复此任务，请稍后查看。",
-            prompt = prompt,
-            historyId = historyId,
-            jobId = jobId,
-            history = mutableState.value.history,
-        )
-        updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.Generating, remoteJobId = jobId) }
-    }
-
-    /**
-     * A terminal job can outlive its RAM record after a device restart. If the
-     * device confirms that this exact preview-generation job already completed
-     * but its temporary source is gone, keeping the composer locked would
-     * falsely imply that a billable task is still running. Never resubmit here:
-     * that would create a second model charge without the user's approval.
-     */
-    private suspend fun recoverLostTerminalPreview(jobId: String, prompt: String, historyId: String): Boolean {
-        val diagnostic = repository.lastTaskDiagnostic().getOrNull() ?: return false
-        val isSameCompletedPreview = diagnostic.jobId == jobId &&
-            diagnostic.kind == "generate_preview" &&
-            diagnostic.state in setOf("success", "completed", "2")
-        if (!isSameCompletedPreview) return false
-
-        fail(
-            prompt = prompt,
-            message = "设备在重启前已完成生成，但临时预览未能恢复，尚未保存到 AI 相册。此任务已结束；如需重新生成会再次产生模型费用。",
-            historyId = historyId,
-        )
-        return true
     }
 
     private suspend fun awaitSave(saveJobId: String, before: AiGenerationUiState) {
@@ -445,7 +336,7 @@ class AiGenerationViewModel(
             if (job.errorCode in setOf("ai_source_invalid", "ai_conversion_failed")) {
                 fail(
                     prompt = before.prompt.orEmpty(),
-                    message = "相框返回的生成图片无法解析，未保存到 AI 相册。本次任务已结束，不会自动重新生成或再次扣费。",
+                    message = "相框未能接收转换后的六色图片，尚未保存到 TF 卡；手机预览仍然保留。",
                     historyId = requireNotNull(before.historyId),
                     errorCode = job.errorCode,
                 )
@@ -453,7 +344,7 @@ class AiGenerationViewModel(
             }
             mutableState.value = before.copy(
                 phase = AiGenerationPhase.PreviewReady,
-                message = if (job.completed) "设备未确认已保存的图片，预览仍可重新保存" else "保存失败：${job.errorCode ?: "未知错误"}",
+                message = if (job.completed) "相框未确认图片已写入 TF 卡，预览仍可重新保存" else "保存失败：${job.errorCode ?: "未知错误"}",
             )
             persistHistory(historyItem(before, AiGenerationSaveStatus.PreviewReady))
             return
@@ -472,7 +363,7 @@ class AiGenerationViewModel(
             history = before.history,
         )
         updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.Failed, failureReason = message) }
-        loadLastTaskDiagnostic()
+        if (errorCode != null) loadLastTaskDiagnostic()
     }
 
     private suspend fun loadLastTaskDiagnostic() {
@@ -482,44 +373,6 @@ class AiGenerationViewModel(
         repository.lastTaskDiagnostic().onSuccess { diagnostic ->
             mutableState.value = mutableState.value.copy(lastTaskDiagnostic = diagnostic)
         }
-    }
-
-    private suspend fun markPendingUnknown(jobId: String, prompt: String, historyId: String) {
-        val message = "状态暂时无法读取，请继续查询；请勿重复生成。"
-        mutableState.value = AiGenerationUiState(
-            phase = AiGenerationPhase.GeneratingPreview,
-            message = message,
-            prompt = prompt,
-            historyId = historyId,
-            jobId = jobId,
-            history = mutableState.value.history,
-        )
-        updateHistory(historyId) { it.copy(saveStatus = AiGenerationSaveStatus.Generating, failureReason = message, remoteJobId = jobId) }
-    }
-
-    private fun generationFailureMessage(code: String?): String = when (code) {
-        "ai_request_timeout" -> "生成超时：模型服务响应较慢，请稍后重试"
-        "ai_http_401" -> "生成失败：API Key 无效或已失效"
-        "ai_http_403" -> "生成失败：当前 Key 没有该模型权限"
-        "ai_http_400" -> "生成失败：模型 ID 或请求参数不兼容"
-        "ai_http_404" -> "生成失败：未找到当前模型或接口地址"
-        "ai_http_429" -> "生成失败：模型服务限流，请稍后再试"
-        "ai_network_failed" -> "生成失败：相框无法访问模型服务"
-        "ai_tls_failed" -> "生成失败：安全连接异常，请检查网络时间"
-        "ai_invalid_provider_response" -> "生成失败：模型服务返回格式不兼容"
-        "ai_preview_commit_failed" -> "生成成功，但临时预览写入 TF 卡时发生冲突；请重新生成"
-        "ai_download_failed" -> "生成成功，但图片下载到相框失败"
-        "ai_download_tls_failed" -> "生成成功，但相框与图片服务器的安全连接失败"
-        "ai_download_timeout" -> "生成成功，但相框下载图片超时"
-        "ai_download_network_failed" -> "生成成功，但相框无法连接图片服务器"
-        "ai_download_http_4xx" -> "生成成功，但图片临时链接已失效或无权限"
-        "ai_download_http_5xx" -> "生成成功，但图片服务器暂时异常"
-        "ai_download_redirect_failed" -> "生成成功，但图片下载跳转失败"
-        "ai_download_storage_failed" -> "生成成功，但相框写入临时图片失败"
-        "ai_source_too_large" -> "生成图片超过相框可处理大小"
-        "ai_conversion_memory" -> "相框内存不足，无法处理生成图片"
-        "ai_conversion_failed" -> "生成图片无法转换为电子纸预览"
-        else -> "生成失败：${code ?: "设备未返回错误码"}"
     }
 
     private suspend fun persistHistory(item: AiGenerationHistoryItem) {
@@ -577,12 +430,6 @@ class AiGenerationViewModel(
         "checksum_mismatch", "media_incomplete" -> "图片传输校验失败，请重试保存"
         "ai_job_busy" -> "相框正在处理其他任务"
         else -> "请检查相框连接后重试"
-    }
-
-    private fun previewPhaseText(phase: String, progress: Int): String = when (phase) {
-        "requesting" -> "正在请求图像模型…"
-        "downloading" -> "正在下载生成图片…"
-        else -> "正在生成预览（${progress.coerceIn(0, 100)}%）…"
     }
 
     private fun savePhaseText(phase: String, progress: Int): String = when (phase) {

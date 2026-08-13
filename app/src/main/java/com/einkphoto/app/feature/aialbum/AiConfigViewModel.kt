@@ -41,7 +41,7 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
                 mutableState.value = mutableState.value.copy(configuration = config, profilesAvailable = false, loading = false)
             }
         }.onFailure {
-            mutableState.value = mutableState.value.copy(loading = false, message = "无法读取模型配置，请确认相框已连接")
+            mutableState.value = mutableState.value.copy(loading = false, message = "无法读取手机上的模型配置，请稍后重试")
         }
     }
 
@@ -59,7 +59,7 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
                 mutableState.value = mutableState.value.copy(saving = false, message = "模型已保存，但暂时无法设为当前模型")
             }
         }.onFailure {
-            mutableState.value = mutableState.value.copy(saving = false, message = "保存失败，请检查相框连接和填写内容")
+            mutableState.value = mutableState.value.copy(saving = false, message = "保存失败，请检查填写内容和手机存储状态")
         }
     }
 
@@ -68,11 +68,11 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
             mutableState.value = mutableState.value.copy(message = "请填写名称、HTTPS 服务地址、生图模型和有效的 API Key")
             return@launch
         }
-        mutableState.value = mutableState.value.copy(saving = true, message = "正在保存并测试模型…", testResult = null)
+        mutableState.value = mutableState.value.copy(saving = true, message = "正在保存并检查配置…", testResult = null)
         val profileId = existingProfileId.orEmpty().ifBlank { "model-${System.currentTimeMillis()}" }
         val saved = repository.saveProfile(profileId, name.trim(), endpoint, imageModel, apiKey)
         saved.onFailure {
-            mutableState.value = mutableState.value.copy(saving = false, message = "保存失败，请检查相框连接和填写内容")
+            mutableState.value = mutableState.value.copy(saving = false, message = "保存失败，请检查填写内容和手机存储状态")
             return@launch
         }
         val profile = saved.getOrThrow()
@@ -82,7 +82,7 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
         }
         repository.testConnection(allowBillableTest = true).onSuccess { test ->
             val message = when {
-                test.modelAvailable -> "模型连接成功：相框已联网，API Key 有效，当前生图模型可用。测试未生成图片，不会写入 TF 卡。"
+                test.modelAvailable -> "模型连接成功：手机可访问 Seedream，API Key 有效，当前生图模型可用。测试未生成图片，不会写入 TF 卡。"
                 test.authenticated -> "服务已连接且 API Key 有效，但当前模型不可用；请检查模型名称或开通权限。"
                 else -> testMessage(test.code, test.providerMessage)
             }
@@ -102,7 +102,7 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
     }
 
     fun testSaved() = viewModelScope.launch {
-        mutableState.value = mutableState.value.copy(saving = true, message = "正在测试已保存的模型…", testResult = null)
+        mutableState.value = mutableState.value.copy(saving = true, message = "正在检查已保存的配置…", testResult = null)
         repository.testConnection(allowBillableTest = true).onSuccess { test ->
             val message = when {
                 test.modelAvailable -> "模型连接成功：API Key 有效，当前图片模型可用。"
@@ -122,8 +122,8 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
         "ai_http_403" -> "模型服务已连接，但当前 API Key 没有该模型的访问权限。"
         "ai_http_404", "ai_model_unavailable" -> "服务已连接，但未找到当前模型；请检查模型名称或接入点。"
         "ai_http_429" -> "模型服务暂时限流，请稍后再次测试。"
-        "ai_network_failed" -> "相框无法访问互联网，请先检查 STA 网络。"
-        "ai_tls_failed" -> "相框无法建立安全连接，请检查网络时间和服务地址。"
+        "ai_network_failed" -> "手机无法访问互联网，请检查当前网络。"
+        "ai_tls_failed" -> "手机无法建立安全连接，请检查系统时间和服务地址。"
         "ai_request_timeout" -> "连接模型服务超时，请检查网络后重试。"
         else -> "模型连接测试失败：${code.ifBlank { "未知错误" }}"
     }
@@ -140,7 +140,7 @@ class AiConfigViewModel(private val repository: AiConfigRepository) : ViewModel(
     fun activateProfile(id: String) = viewModelScope.launch {
         mutableState.value = mutableState.value.copy(saving = true, message = "正在切换模型…", testResult = null)
         repository.activateProfile(id).onSuccess { refreshAfterProfileChange("当前模型已切换") }
-            .onFailure { mutableState.value = mutableState.value.copy(saving = false, message = "切换失败，请确认相框连接") }
+            .onFailure { mutableState.value = mutableState.value.copy(saving = false, message = "切换失败，请稍后重试") }
     }
 
     fun deleteActiveProfile() = viewModelScope.launch {

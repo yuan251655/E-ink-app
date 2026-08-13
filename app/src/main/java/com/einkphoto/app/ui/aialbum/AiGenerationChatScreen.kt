@@ -339,20 +339,20 @@ private fun diagnosticErrorLabel(code: String?): String = when (code) {
     "ai_http_403" -> "当前模型没有访问权限（ai_http_403）"
     "ai_http_404" -> "未找到模型或服务地址（ai_http_404）"
     "ai_http_429" -> "服务暂时限流（ai_http_429）"
-    "ai_network_failed" -> "相框无法访问模型服务（ai_network_failed）"
+    "ai_network_failed" -> "手机无法访问模型服务（ai_network_failed）"
     "ai_tls_failed" -> "安全连接异常（ai_tls_failed）"
     "ai_request_timeout" -> "模型服务响应超时（ai_request_timeout）"
     "ai_invalid_provider_response" -> "模型服务返回内容无法识别（ai_invalid_provider_response）"
     "ai_download_failed" -> "生成成功但图片下载失败（ai_download_failed）"
     "ai_download_tls_failed" -> "图片服务器安全连接失败（ai_download_tls_failed）"
     "ai_download_timeout" -> "下载生成图片超时（ai_download_timeout）"
-    "ai_download_network_failed" -> "相框无法连接图片服务器（ai_download_network_failed）"
+    "ai_download_network_failed" -> "手机无法连接图片服务器（ai_download_network_failed）"
     "ai_download_http_4xx" -> "图片临时链接已失效或无权限（ai_download_http_4xx）"
     "ai_download_http_5xx" -> "图片服务器暂时异常（ai_download_http_5xx）"
     "ai_download_redirect_failed" -> "图片下载跳转失败（ai_download_redirect_failed）"
-    "ai_download_storage_failed" -> "写入临时图片失败（ai_download_storage_failed）"
-    "ai_source_too_large" -> "生成图片超过相框可处理大小（ai_source_too_large）"
-    "ai_conversion_memory" -> "相框内存不足，无法转换六色图（ai_conversion_memory）"
+    "ai_download_storage_failed" -> "手机保存临时预览失败（ai_download_storage_failed）"
+    "ai_source_too_large" -> "生成图片超过手机可处理大小（ai_source_too_large）"
+    "ai_conversion_memory" -> "手机内存不足，无法转换六色图（ai_conversion_memory）"
     "ai_conversion_failed" -> "生成图片无法转换为六色电子纸画面（ai_conversion_failed）"
     "ai_preview_commit_failed" -> "临时预览保存失败（ai_preview_commit_failed）"
     "ai_commit_failed" -> "图片写入 AI 相册失败（ai_commit_failed）"
@@ -394,7 +394,7 @@ private fun GenerationTopBar(
 
 @Composable
 private fun GenerationIntro() {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Row(
             Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -483,7 +483,7 @@ private fun PreviewCard(preview: AiGenerationPreview, onExpand: () -> Unit) {
 
 @Composable
 private fun SavedCard(message: String, onOpenAiImages: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
         Column(
             Modifier.fillMaxWidth().padding(18.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -616,11 +616,11 @@ private fun historyStatusLabel(status: AiGenerationSaveStatus): String = when (s
 }
 
 private fun historyDetail(status: AiGenerationSaveStatus): String? = when (status) {
-    AiGenerationSaveStatus.Submitting -> "正在将本次请求发送到相框。"
+    AiGenerationSaveStatus.Submitting -> "正在由手机向 Seedream 提交本次请求。"
     AiGenerationSaveStatus.WaitingToSubmit -> "等待上一项任务结束；本条尚未调用模型。"
-    AiGenerationSaveStatus.Generating -> "任务仍在相框端处理，可继续查询进度。"
+    AiGenerationSaveStatus.Generating -> "这是旧版本留下的生成任务记录，可查看处理结果。"
     AiGenerationSaveStatus.PreviewReady -> "临时预览保存在本机；确认保存后才会写入 TF 卡。"
-    AiGenerationSaveStatus.Saving -> "正在转换并写入 AI 相册，可继续查询进度。"
+    AiGenerationSaveStatus.Saving -> "手机正在转换六色图片，并上传到相框 TF 卡。"
     AiGenerationSaveStatus.Failed -> "这次未生成成功，可重新输入新的图片描述。"
     AiGenerationSaveStatus.Cancelled -> "已停止在手机端继续跟踪该任务。"
     AiGenerationSaveStatus.Saved -> null

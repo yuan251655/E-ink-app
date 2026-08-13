@@ -304,7 +304,8 @@ class LanAiImageRepository(
         id = mediaId,
         displayName = displayName,
         createdAtEpochMillis = createdAtEpochMillis,
-        sizeBytes = source.sizeBytes ?: imageBin.sizeBytes ?: preview.sizeBytes,
+        sizeBytes = listOf(imageBin, source, preview)
+            .firstNotNullOfOrNull { asset -> asset.sizeBytes?.takeIf { asset.present && it > 0L } },
         revision = revision,
         previewUri = previewUri,
         sourceAvailable = source.present,
