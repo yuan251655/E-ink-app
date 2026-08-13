@@ -268,7 +268,15 @@ class DevelopmentApHttpClient {
                         val stream = if (status in 200..299) connection.inputStream else connection.errorStream
                             ?: throw DeviceResponseException("HTTP $status")
                         val root = JSONObject(stream.bufferedReader().use { it.readText() })
-                        if (!root.optBoolean("ok", false)) throw DeviceResponseException(root.optString("code", "request_failed"))
+                        if (!root.optBoolean("ok", false)) {
+                            val code = root.optString("code", "request_failed")
+                            if (code == "display_cooldown") {
+                                DeviceGlobalNoticeBus.displayCooldown(
+                                    root.optJSONObject("data")?.optInt("remaining_seconds", 60) ?: 60,
+                                )
+                            }
+                            throw DeviceResponseException(code)
+                        }
                         // Never log request JSON: it can include prompt text or credentials.
                         Log.i("EInkDeviceHttp", "POST $path endpoint=$endpoint HTTP=$status")
                         DeviceEndpointConfig.markEndpointReachable(endpoint)
@@ -477,6 +485,8 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
                     storageFreeBytes = storage?.takeIf { it.optInt("state", 0) == 2 }?.optLong("free_bytes"),
                     currentMediaId = display?.optString("current_media_id").takeIf { !it.isNullOrBlank() },
                     modeRevision = mode?.optLong("revision", 0L) ?: 0L,
+                    displayCooldownRemainingSeconds = display?.optInt("cooldown_remaining_seconds", 0)?.coerceAtLeast(0) ?: 0,
+                    displayCooldownRejectionSequence = display?.optLong("cooldown_rejection_sequence", 0L) ?: 0L,
                 ),
             )
         }, onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },

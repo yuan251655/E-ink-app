@@ -131,5 +131,5 @@ class AppUpdateRepository(private val context: Context) {
     }
 
     private fun isSupportedUpdateUrl(url: String): Boolean =
-        url.startsWith("https://") || url.startsWith("http://")
+        url.startsWith("https://")
 }

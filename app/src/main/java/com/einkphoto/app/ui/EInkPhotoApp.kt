@@ -2,8 +2,11 @@ package com.einkphoto.app.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
@@ -77,6 +80,7 @@ import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceSession
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.DeviceConnectionState
+import com.einkphoto.app.core.device.DeviceGlobalNoticeBus
 import com.einkphoto.app.feature.settings.network.LanNetworkRepository
 import com.einkphoto.app.feature.settings.storage.LanStorageRepository
 import com.einkphoto.app.feature.settings.power.LanPowerRepository
@@ -106,6 +110,7 @@ import com.einkphoto.app.feature.aialbum.AiPlaybackViewModel
 import com.einkphoto.app.feature.mode.ModeSwitchPhase
 import com.einkphoto.app.ui.components.ModeSwitchGlobalStatus
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 @Composable
 fun EInkPhotoApp() = EInkPhotoTheme {
@@ -224,6 +229,8 @@ private fun EInkPhotoAppContent(
     val powerRepository = remember { LanPowerRepository() }
     val audioRepository = remember { LanAudioRepository() }
     val powerSnapshot by powerRepository.snapshot.collectAsState()
+    var globalWarning by remember { mutableStateOf<String?>(null) }
+    var observedCooldownRejectionSequence by remember { mutableStateOf<Long?>(null) }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
     var showPowerSettings by rememberSaveable { mutableStateOf(false) }
@@ -241,6 +248,21 @@ private fun EInkPhotoAppContent(
             session.refreshSnapshot()
             delay(8_000L)
         }
+    }
+    LaunchedEffect(Unit) {
+        DeviceGlobalNoticeBus.notices.collectLatest { message ->
+            globalWarning = message
+            delay(3_000L)
+            globalWarning = null
+        }
+    }
+    LaunchedEffect(snapshot.displayCooldownRejectionSequence) {
+        val previous = observedCooldownRejectionSequence
+        val current = snapshot.displayCooldownRejectionSequence
+        if (current > (previous ?: 0L) && snapshot.displayCooldownRemainingSeconds > 0) {
+            DeviceGlobalNoticeBus.displayCooldown(snapshot.displayCooldownRemainingSeconds)
+        }
+        observedCooldownRejectionSequence = current
     }
     // Keep the header indicator fresh while a real device is online. The
     // settings page has its own faster heartbeat; this lighter 10-second
@@ -466,6 +488,32 @@ private fun EInkPhotoAppContent(
             },
             modifier = Modifier.align(Alignment.BottomCenter),
         )
+        AnimatedVisibility(
+            visible = globalWarning != null,
+            modifier = Modifier
+                .align(Alignment.Center)
+                .padding(horizontal = 32.dp)
+                .zIndex(20f),
+            enter = fadeIn(tween(180)) + scaleIn(tween(260), initialScale = 0.96f),
+            exit = fadeOut(tween(180)) + scaleOut(tween(220), targetScale = 0.98f),
+        ) {
+            Surface(
+                color = Color(0xFFD5222A).copy(alpha = 0.90f),
+                contentColor = Color.White,
+                shape = RoundedCornerShape(22.dp),
+                shadowElevation = 14.dp,
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.28f)),
+            ) {
+                Text(
+                    text = globalWarning.orEmpty(),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    lineHeight = 24.sp,
+                )
+            }
+        }
     }
 }
 

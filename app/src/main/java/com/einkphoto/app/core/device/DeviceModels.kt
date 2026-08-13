@@ -62,6 +62,8 @@ data class DeviceSnapshot(
     val modeRevision: Long = 0L,
     val modeSwitchJobId: DeviceJobId? = null,
     val currentContent: DeviceCurrentContent? = null,
+    val displayCooldownRemainingSeconds: Int = 0,
+    val displayCooldownRejectionSequence: Long = 0L,
 )
 
 @JvmInline

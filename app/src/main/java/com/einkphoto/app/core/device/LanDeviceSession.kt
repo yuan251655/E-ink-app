@@ -106,6 +106,8 @@ data class LanStatus(
     val currentMediaId: String? = null,
     /** Current mode revision required by the display request's optimistic-concurrency contract. */
     val modeRevision: Long = 0L,
+    val displayCooldownRemainingSeconds: Int = 0,
+    val displayCooldownRejectionSequence: Long = 0L,
 )
 
 data class DeviceModeSnapshot(
@@ -153,6 +155,8 @@ class LanDeviceSession(private val transport: LanDeviceTransport) : DeviceSessio
             modeRevision = mode.revision,
             modeSwitchJobId = mode.switchJobId,
             currentContent = mode.currentContent,
+            displayCooldownRemainingSeconds = status.displayCooldownRemainingSeconds,
+            displayCooldownRejectionSequence = status.displayCooldownRejectionSequence,
         )
         mutableSnapshot.value = updated
         DeviceCommandResult.Accepted(updated)

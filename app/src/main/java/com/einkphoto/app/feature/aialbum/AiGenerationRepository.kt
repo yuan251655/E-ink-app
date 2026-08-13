@@ -37,12 +37,16 @@ class AiGenerationRepository(
         val normalized = prompt.trim()
         require(normalized.isNotEmpty()) { "prompt_required" }
         require(normalized.length <= MAX_PROMPT_CHARS) { "prompt_too_long" }
-        saveDirectPreview(normalized, historyId, directClient.generate(normalized).getOrThrow())
+        AiGenerationCoordinator.run(historyId) {
+            saveDirectPreview(normalized, historyId, directClient.generate(normalized).getOrThrow())
+        }
     }
 
     suspend fun createDirectPhotoStylePreview(prompt: String, historyId: String, reference: PhotoStyleReferencePreprocessor.PreparedReference): Result<AiGenerationPreview> = runCatching {
-        val url = directClient.generate(prompt.trim(), reference.file).getOrThrow()
-        saveDirectPreview(prompt, historyId, url)
+        AiGenerationCoordinator.run(historyId) {
+            val url = directClient.generate(prompt.trim(), reference.file).getOrThrow()
+            saveDirectPreview(prompt, historyId, url)
+        }
     }
 
     private suspend fun saveDirectPreview(prompt: String, historyId: String, url: String): AiGenerationPreview {
@@ -51,6 +55,8 @@ class AiGenerationRepository(
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         require(bounds.outWidth > 0 && bounds.outHeight > 0) { "preview_decode_failed" }
+        require(bounds.outWidth <= MAX_IMAGE_EDGE && bounds.outHeight <= MAX_IMAGE_EDGE &&
+            bounds.outWidth.toLong() * bounds.outHeight <= MAX_IMAGE_PIXELS) { "seedream_image_too_large" }
         return AiGenerationPreview("app-$historyId", prompt, Uri.fromFile(file).toString(), "image/jpeg", file.length())
     }
 
@@ -164,6 +170,8 @@ class AiGenerationRepository(
 
     private companion object {
         const val MAX_PROMPT_CHARS = 500
+        const val MAX_IMAGE_EDGE = 10_000
+        const val MAX_IMAGE_PIXELS = 40_000_000L
         val AI_DISPLAY_PROFILE = DisplayProfile(
             widthPx = 800,
             heightPx = 480,
