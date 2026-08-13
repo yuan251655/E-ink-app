@@ -191,6 +191,7 @@ class DevelopmentApHttpClient {
                 .put("category", request.category.apiValue)
                 .put("upload_mode", "bin_only")
                 .put("display_name", request.displayName)
+                .put("created_at_ms", request.createdAtEpochMillis)
                 .put("image_bin", JSONObject()
                     .put("size_bytes", request.imageBinSizeBytes)
                     .put("bytes", request.imageBinSizeBytes)

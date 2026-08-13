@@ -8,7 +8,9 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +45,7 @@ import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material.icons.outlined.PlayCircleOutline
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.SaveAlt
+import androidx.compose.material.icons.outlined.Close
 import com.einkphoto.app.ui.components.AppleAlertDialog as AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -61,6 +64,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -134,14 +138,24 @@ internal fun AiImageLibraryScreen(
     onOpenDetails: (String) -> Unit,
     onRetry: () -> Unit,
     contentPadding: PaddingValues,
+    onDeleteSelected: (Set<String>) -> Unit = {},
     hasMore: Boolean = false,
     loadingMore: Boolean = false,
     onLoadMore: () -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
+    var selectedIds by remember { mutableStateOf(emptySet<String>()) }
+    var selectionMode by remember { mutableStateOf(false) }
+    var showDeleteConfirmation by remember { mutableStateOf(false) }
     Box(modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.TopCenter) {
         Column(Modifier.fillMaxSize().widthIn(max = 760.dp)) {
-            AiImageHeader(title = "AI 图片", onBack = onBack)
+            AiImageHeader(
+                title = if (selectionMode) "已选择 ${selectedIds.size} 张" else "AI 图片",
+                onBack = if (selectionMode) {{ selectionMode = false; selectedIds = emptySet() }} else onBack,
+                selectionMode = selectionMode,
+                deleteEnabled = selectedIds.isNotEmpty(),
+                onDelete = { showDeleteConfirmation = true },
+            )
             when (state) {
                 AiImageLibraryState.Loading -> CenterState(
                     icon = { CircularProgressIndicator(Modifier.size(34.dp)) },
@@ -183,10 +197,23 @@ internal fun AiImageLibraryScreen(
                             verticalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             items(aiImages, key = { it.id }) { image ->
+                                val current = isAiImageCurrentlyDisplayed(currentContent, image.id)
                                 AiImageCard(
                                     image = image,
-                                    currentlyDisplayed = isAiImageCurrentlyDisplayed(currentContent, image.id),
-                                    onClick = { onOpenDetails(image.id) },
+                                    currentlyDisplayed = current,
+                                    selectionMode = selectionMode,
+                                    selected = image.id in selectedIds,
+                                    onClick = {
+                                        if (selectionMode) {
+                                            if (!current) selectedIds = selectedIds.toggle(image.id)
+                                        } else onOpenDetails(image.id)
+                                    },
+                                    onLongClick = {
+                                        if (!current) {
+                                            selectionMode = true
+                                            selectedIds = selectedIds + image.id
+                                        }
+                                    },
                                 )
                             }
                             if (hasMore) {
@@ -207,7 +234,27 @@ internal fun AiImageLibraryScreen(
             }
         }
     }
+    if (showDeleteConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmation = false },
+            title = { Text("删除所选图片？") },
+            text = { Text("将从 TF 卡中删除已选择的 ${selectedIds.size} 张 AI 图片，此操作无法撤销。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDeleteConfirmation = false
+                    onDeleteSelected(selectedIds)
+                    selectedIds = emptySet()
+                    selectionMode = false
+                }) { Text("删除", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmation = false }) { Text("取消") }
+            },
+        )
+    }
 }
+
+private fun Set<String>.toggle(id: String): Set<String> = if (id in this) this - id else this + id
 
 @Composable
 internal fun AiImageDetailScreen(
@@ -357,15 +404,29 @@ internal fun AiImageDetailScreen(
 }
 
 @Composable
-private fun AiImageHeader(title: String, onBack: () -> Unit) {
+private fun AiImageHeader(
+    title: String,
+    onBack: () -> Unit,
+    selectionMode: Boolean = false,
+    deleteEnabled: Boolean = false,
+    onDelete: () -> Unit = {},
+) {
     Row(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onBack, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回 AI 相册")
+            Icon(
+                if (selectionMode) Icons.Outlined.Close else Icons.AutoMirrored.Outlined.ArrowBack,
+                contentDescription = if (selectionMode) "退出选择" else "返回 AI 相册",
+            )
         }
-        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+        if (selectionMode) {
+            IconButton(onClick = onDelete, enabled = deleteEnabled, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Outlined.DeleteOutline, contentDescription = "删除所选图片", tint = MaterialTheme.colorScheme.error)
+            }
+        }
     }
 }
 
@@ -401,12 +462,20 @@ private fun CenterState(
 }
 
 @Composable
-private fun AiImageCard(image: AiImageRecord, currentlyDisplayed: Boolean, onClick: () -> Unit) {
+@OptIn(ExperimentalFoundationApi::class)
+private fun AiImageCard(
+    image: AiImageRecord,
+    currentlyDisplayed: Boolean,
+    selectionMode: Boolean,
+    selected: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
     OutlinedCard(
-        modifier = Modifier.fillMaxWidth().pressFeedbackClickable(role = Role.Button, onClick = onClick),
+        modifier = Modifier.fillMaxWidth().combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onLongClick),
         border = BorderStroke(
-            width = 1.dp,
-            color = if (currentlyDisplayed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+            width = if (selected) 2.dp else 1.dp,
+            color = if (selected || (currentlyDisplayed && !selectionMode)) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
         ),
     ) {
         Column {
@@ -414,8 +483,10 @@ private fun AiImageCard(image: AiImageRecord, currentlyDisplayed: Boolean, onCli
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(image.name, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
-                    if (currentlyDisplayed) {
+                    if (currentlyDisplayed && !selectionMode) {
                         Icon(Icons.Outlined.CheckCircle, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                    } else if (selected) {
+                        Icon(Icons.Outlined.CheckCircle, contentDescription = "已选择", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                 }
                 Text(image.prompt ?: "未提供", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)

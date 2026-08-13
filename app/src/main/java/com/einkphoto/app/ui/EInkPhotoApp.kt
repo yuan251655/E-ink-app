@@ -421,6 +421,7 @@ private fun EInkPhotoAppContent(
                 onLoadMoreAiImages = aiImageViewModel::loadMore,
                 onDisplayAiImage = aiImageViewModel::display,
                 onDeleteAiImage = aiImageViewModel::delete,
+                onDeleteAiImages = aiImageViewModel::deleteMany,
                 onSaveAiImageToPhone = aiImageViewModel::saveToPhone,
                 onSetAiPlaybackStart = aiImageViewModel::playbackStartUnavailable,
                 aiPlayback = aiPlaybackState,

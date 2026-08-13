@@ -121,7 +121,7 @@ class AiGenerationRepository(
             DeviceMediaUploadRequest(
                 requestId = "ai-save-$historyId".take(64),
                 category = DeviceMediaCategory.Ai,
-                displayName = "照片风格转换-${historyId.takeLast(8)}",
+                displayName = "AI 图片",
                 imageBinFile = bin,
                 imageBinSizeBytes = bin.length(),
                 imageBinSha256 = sha256(bin),

@@ -185,6 +185,7 @@ fun AiAlbumHost(
     onLoadMoreAiImages: () -> Unit = {},
     onDisplayAiImage: (String) -> Unit = {},
     onDeleteAiImage: (String) -> Unit = {},
+    onDeleteAiImages: (Set<String>) -> Unit = {},
     onSaveAiImageToPhone: (String) -> Unit = {},
     onSetAiPlaybackStart: () -> Unit = {},
     aiPlayback: PlaybackSettings = PlaybackSettings(PlayMode.Paused, PlayOrder.Sequential, 1800),
@@ -223,11 +224,11 @@ fun AiAlbumHost(
     val aiImageGridState = rememberLazyGridState()
     val stateHolder = rememberSaveableStateHolder()
     val route = AiAlbumRoute.entries.firstOrNull { it.name == routeName } ?: AiAlbumRoute.Home
-    val runtimeAiImages = aiImageUiState.images.map { item ->
+    val runtimeAiImages = aiImageUiState.images.mapIndexed { index, item ->
         AiImageRecord(
             id = item.id,
             category = DeviceMediaCategory.Ai,
-            name = item.displayName,
+            name = "AI 图片 ${String.format(Locale.ROOT, "%03d", index + 1)}",
             prompt = item.prompt,
             generatedAtLabel = formatAiImageTime(item.createdAtEpochMillis),
             modelLabel = item.model,
@@ -299,6 +300,7 @@ fun AiAlbumHost(
                 }
             },
             onRetry = onRefreshAiImages,
+            onDeleteSelected = onDeleteAiImages,
             hasMore = aiImageUiState.hasMore,
             loadingMore = aiImageUiState.loadingMore,
             onLoadMore = onLoadMoreAiImages,
@@ -470,10 +472,10 @@ internal fun presentAiImageLibraryState(
     AiImageLoadState.Error -> AiImageLibraryState.Error(errorMessage ?: "请稍后重试。")
 }
 
-private fun formatAiImageTime(epochMillis: Long): String = if (epochMillis > 0L) {
+private fun formatAiImageTime(epochMillis: Long): String = if (epochMillis >= 1_577_836_800_000L) {
     SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(epochMillis))
 } else {
-    "未提供"
+    "时间未记录"
 }
 
 @Composable

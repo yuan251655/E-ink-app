@@ -77,6 +77,7 @@ data class DeviceMediaUploadRequest(
     val requestId: String,
     val category: DeviceMediaCategory,
     val displayName: String,
+    val createdAtEpochMillis: Long = System.currentTimeMillis(),
     val imageBinFile: File,
     val imageBinSizeBytes: Long,
     val imageBinSha256: String,

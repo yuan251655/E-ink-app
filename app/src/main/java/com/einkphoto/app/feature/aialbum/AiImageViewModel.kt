@@ -108,6 +108,22 @@ class AiImageViewModel(
         }
     }
 
+    fun deleteMany(mediaIds: Set<String>) = runAction {
+        var deleted = 0
+        var failed = 0
+        mediaIds.forEach { mediaId ->
+            when (repository.delete(mediaId)) {
+                is DeviceCommandResult.Accepted -> deleted++
+                is DeviceCommandResult.Rejected -> failed++
+            }
+        }
+        actionMessage.value = when {
+            failed == 0 -> "已删除 $deleted 张图片"
+            deleted == 0 -> "所选图片均未能删除"
+            else -> "已删除 $deleted 张，$failed 张未能删除"
+        }
+    }
+
     fun saveToPhone(mediaId: String) = runAction {
         when (val result = repository.exportToPhone(mediaId)) {
             is DeviceCommandResult.Accepted -> actionMessage.value = when (result.value.kind) {
