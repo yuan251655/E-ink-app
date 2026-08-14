@@ -250,7 +250,7 @@ private fun EInkPhotoAppContent(
     LaunchedEffect(session) {
         while (true) {
             session.refreshSnapshot()
-            delay(8_000L)
+            delay(if (session.snapshot.value.connection == DeviceConnectionState.Online) 3_000L else 1_500L)
         }
     }
     LaunchedEffect(Unit) {
@@ -283,6 +283,13 @@ private fun EInkPhotoAppContent(
         val jobId = snapshot.modeSwitchJobId
         val target = snapshot.pendingFeature
         if (jobId != null && target != null) modeSwitchViewModel.resumePendingSwitch(target, jobId)
+    }
+    LaunchedEffect(snapshot.connection, snapshot.activeFeature, snapshot.pendingFeature) {
+        modeSwitchViewModel.reconcileAuthoritativeState(
+            snapshot.connection,
+            snapshot.activeFeature,
+            snapshot.pendingFeature,
+        )
     }
     // The screen's active feature is the authority. Navigate only after the mode job is
     // terminal-success and a fresh device snapshot confirms the same target; never navigate

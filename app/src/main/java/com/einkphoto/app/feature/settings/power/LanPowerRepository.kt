@@ -13,11 +13,11 @@ class LanPowerRepository(
     private val mutableSnapshot = MutableStateFlow(PowerSnapshot())
     override val snapshot: StateFlow<PowerSnapshot> = mutableSnapshot.asStateFlow()
 
-    override suspend fun refresh(): PowerActionResult = client.get(STATUS_PATH).fold(
+    override suspend fun refresh(): PowerActionResult = client.get(STATUS_PATH, fastProbe = true).fold(
         onSuccess = { root ->
             parse(root.optJSONObject("data"))?.let { snapshot ->
-                val sleep = client.get(SLEEP_CONFIG_PATH).getOrNull()?.optJSONObject("data")
-                val sleepStatus = client.get(SLEEP_STATUS_PATH).getOrNull()?.optJSONObject("data")
+                val sleep = client.get(SLEEP_CONFIG_PATH, fastProbe = true).getOrNull()?.optJSONObject("data")
+                val sleepStatus = client.get(SLEEP_STATUS_PATH, fastProbe = true).getOrNull()?.optJSONObject("data")
                 mutableSnapshot.value = snapshot.copy(
                     automaticSleepEnabled = sleep?.optBoolean("enabled", false) ?: false,
                     idleTimeoutSeconds = sleep?.let(::idleTimeoutSeconds) ?: 15 * 60,

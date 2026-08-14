@@ -1,6 +1,7 @@
 package com.einkphoto.app.feature.mode
 
 import com.einkphoto.app.MainDispatcherRule
+import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.FakeDeviceSession
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -55,5 +56,13 @@ class ModeSwitchViewModelTest {
         assertEquals(ModeSwitchPhase.Failed, viewModel.state.value.phase)
         assertEquals(DeviceFeature.LocalAlbum, session.snapshot.value.activeFeature)
         assertEquals("设备未找到本次切换任务，模式没有确认完成。请刷新设备状态后重试", viewModel.state.value.message)
+    }
+    @Test fun staleFailureIsResolvedOnlyByMatchingOnlineDeviceState() {
+        val failed = ModeSwitchUiState(target = DeviceFeature.InfoDashboard, phase = ModeSwitchPhase.Failed)
+
+        assertEquals(true, failed.isResolvedBy(DeviceConnectionState.Online, DeviceFeature.InfoDashboard, null))
+        assertEquals(false, failed.isResolvedBy(DeviceConnectionState.Offline, DeviceFeature.InfoDashboard, null))
+        assertEquals(false, failed.isResolvedBy(DeviceConnectionState.Online, DeviceFeature.LocalAlbum, null))
+        assertEquals(false, failed.isResolvedBy(DeviceConnectionState.Online, DeviceFeature.InfoDashboard, DeviceFeature.InfoDashboard))
     }
 }

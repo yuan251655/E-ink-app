@@ -21,22 +21,23 @@ import kotlinx.coroutines.ensureActive
 /** Versioned device HTTP client. The endpoint is read for every request so AP/STA switching takes effect immediately. */
 class DevelopmentApHttpClient {
     private val baseUrl: String get() = DeviceEndpointConfig.apiBaseUrl
-    suspend fun get(path: String): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+    suspend fun get(path: String, fastProbe: Boolean = false): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
         runCatching {
             // Reading the TF-backed media index can take noticeably longer
             // than the small health/status JSON responses, especially just
             // after an e-paper refresh. Do not let a valid, late list reply
             // turn an existing TF gallery into an empty App screen.
-            val readTimeoutMs = if (path.startsWith("/api/v1/media?")) 30_000 else 12_000
+            val readTimeoutMs = if (fastProbe) 2_000 else if (path.startsWith("/api/v1/media?")) 30_000 else 12_000
+            val attempts = if (fastProbe) 1 else 3
             var lastError: Throwable? = null
             for (endpoint in DeviceEndpointConfig.endpointCandidates) {
-                for (attempt in 0..2) {
+                for (attempt in 0 until attempts) {
                     try {
                 val connection = (URL(endpoint + path).openConnection(Proxy.NO_PROXY) as HttpURLConnection).apply {
                     // The ESP may take several seconds to re-open its single HTTP slot after a
                     // TF transaction. Three seconds turned a valid, late 200 response into a
                     // false "offline" result before batch upload could even start.
-                    requestMethod = "GET"; connectTimeout = 8_000; readTimeout = readTimeoutMs
+                    requestMethod = "GET"; connectTimeout = if (fastProbe) 2_000 else 8_000; readTimeout = readTimeoutMs
                     setRequestProperty("Connection", "close")
                     // The product API is JSON-only.  On some Wi-Fi networks a
                     // portal/router can answer an HTTP request with HTML; do
@@ -67,7 +68,7 @@ class DevelopmentApHttpClient {
                     } catch (error: Throwable) {
                         lastError = error
                         Log.w("EInkDeviceHttp", "GET $endpoint$path attempt ${attempt + 1} failed", error)
-                        if (attempt < 2) Thread.sleep(500L * (attempt + 1))
+                        if (attempt + 1 < attempts) Thread.sleep(500L * (attempt + 1))
                     }
                 }
             }
@@ -509,6 +510,15 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
                     currentContent = current?.let(::parseCurrentContent),
                 ),
             )
+        },
+        onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
+    )
+
+    override suspend fun fastHealth(): LanTransportResult<LanHealth> = client.get("/api/v1/health", fastProbe = true).fold(
+        onSuccess = { root ->
+            val data = root.getJSONObject("data")
+            val apiVersion = data.optString("api_version")
+            LanTransportResult.Success(LanHealth("unknown", "墨水屏相册", apiVersion, apiVersion == "v1"))
         },
         onFailure = { LanTransportResult.Failure(DeviceRejection.Offline) },
     )

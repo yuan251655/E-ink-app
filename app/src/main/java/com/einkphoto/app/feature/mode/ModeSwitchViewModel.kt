@@ -3,6 +3,7 @@ package com.einkphoto.app.feature.mode
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.einkphoto.app.core.device.DeviceCommandResult
+import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.DeviceJobId
 import com.einkphoto.app.core.device.DeviceJobState
@@ -37,6 +38,15 @@ data class ModeSwitchUiState(
             ModeSwitchPhase.Refreshing,
             ModeSwitchPhase.Finalizing,
         )
+
+    internal fun isResolvedBy(
+        connection: DeviceConnectionState,
+        activeFeature: DeviceFeature,
+        pendingFeature: DeviceFeature?,
+    ): Boolean = phase == ModeSwitchPhase.Failed &&
+        connection == DeviceConnectionState.Online &&
+        pendingFeature == null &&
+        activeFeature == target
 }
 
 /** Coordinates one explicit device-authoritative ModeSwitchJob for all three main pages. */
@@ -75,6 +85,16 @@ class ModeSwitchViewModel(private val session: DeviceSession) : ViewModel() {
 
     fun clearFeedback() {
         if (!mutableState.value.switching) mutableState.value = ModeSwitchUiState()
+    }
+
+    fun reconcileAuthoritativeState(
+        connection: DeviceConnectionState,
+        activeFeature: DeviceFeature,
+        pendingFeature: DeviceFeature?,
+    ) {
+        if (mutableState.value.isResolvedBy(connection, activeFeature, pendingFeature)) {
+            mutableState.value = ModeSwitchUiState()
+        }
     }
 
     private suspend fun awaitTerminal(target: DeviceFeature, jobId: DeviceJobId) {

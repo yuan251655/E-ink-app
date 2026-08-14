@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.withLock
 /** Transport boundary for the future versioned LAN API. It intentionally exposes no UI or TF paths. */
 interface LanDeviceTransport {
     suspend fun health(): LanTransportResult<LanHealth>
+    suspend fun fastHealth(): LanTransportResult<LanHealth> = health()
     suspend fun capabilities(): LanTransportResult<DeviceCapabilities>
     suspend fun status(): LanTransportResult<LanStatus>
     suspend fun mode(): LanTransportResult<DeviceModeSnapshot> = when (val current = status()) {
@@ -136,8 +137,17 @@ class LanDeviceSession(private val transport: LanDeviceTransport) : DeviceSessio
     override val snapshot: StateFlow<DeviceSnapshot> = mutableSnapshot.asStateFlow()
 
     override suspend fun refreshSnapshot(): DeviceCommandResult<DeviceSnapshot> = mutex.withLock {
-        val health = transport.health().orReject() ?: return@withLock rejectOffline()
+        val wasOnline = mutableSnapshot.value.connection == DeviceConnectionState.Online
+        val health = transport.fastHealth().orReject() ?: return@withLock rejectOffline()
         if (!health.ready) return@withLock rejectOffline()
+        if (!wasOnline) {
+            mutableSnapshot.value = mutableSnapshot.value.copy(
+                deviceId = health.deviceId,
+                displayName = health.displayName,
+                connection = DeviceConnectionState.Reconnecting,
+                capabilities = null,
+            )
+        }
         val capabilities = transport.capabilities().orReject() ?: return@withLock rejectOffline()
         val status = transport.status().orReject() ?: return@withLock rejectOffline()
         val mode = transport.mode().orReject() ?: return@withLock rejectOffline()

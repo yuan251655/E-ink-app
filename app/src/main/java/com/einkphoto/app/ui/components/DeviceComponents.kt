@@ -47,9 +47,14 @@ import com.einkphoto.app.core.device.DeviceSnapshot
 @Composable
 fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifier) {
     val connected = snapshot.connection == DeviceConnectionState.Online
+    val connecting = snapshot.connection in setOf(
+        DeviceConnectionState.Connecting,
+        DeviceConnectionState.Reconnecting,
+    )
     val label = when (snapshot.connection) {
         DeviceConnectionState.Online -> "已连接"
-        DeviceConnectionState.Connecting, DeviceConnectionState.Reconnecting -> "连接中"
+        DeviceConnectionState.Connecting -> "正在连接…"
+        DeviceConnectionState.Reconnecting -> "相框正在唤醒…"
         DeviceConnectionState.Sleeping -> "休眠中"
         DeviceConnectionState.Offline -> "未连接"
     }
@@ -72,9 +77,13 @@ fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifie
         ),
         label = "connection-dot-alpha",
     ).value
-    val pulseScale = if (connected) animatedScale else 1f
-    val pulseAlpha = if (connected) animatedAlpha else 1f
-    val dotColor = if (connected) MaterialTheme.appSemanticColors.success else MaterialTheme.colorScheme.onSurfaceVariant
+    val pulseScale = if (connected || connecting) animatedScale else 1f
+    val pulseAlpha = if (connected || connecting) animatedAlpha else 1f
+    val dotColor = when {
+        connected -> MaterialTheme.appSemanticColors.success
+        connecting -> MaterialTheme.colorScheme.primary
+        else -> MaterialTheme.colorScheme.onSurfaceVariant
+    }
     Surface(
         modifier = modifier,
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.72f),
