@@ -18,6 +18,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -56,8 +57,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -65,7 +69,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -78,6 +88,8 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.tooling.preview.Preview
+import android.os.SystemClock
+import com.einkphoto.app.core.device.DevelopmentApHttpClient
 import com.einkphoto.app.core.device.HttpLanDeviceTransport
 import com.einkphoto.app.core.device.LanDeviceSession
 import com.einkphoto.app.core.device.DeviceFeature
@@ -114,6 +126,9 @@ import com.einkphoto.app.feature.mode.ModeSwitchPhase
 import com.einkphoto.app.feature.localalbum.model.ConversionStage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
+import org.json.JSONObject
+import kotlin.math.sin
 
 @Composable
 fun EInkPhotoApp() = EInkPhotoTheme {
@@ -167,6 +182,269 @@ private fun BrandSplashScreen(progress: Float) {
                 .align(Alignment.Center)
                 .offset(y = 44.dp),
         )
+    }
+}
+
+@Composable
+private fun EasterEggBrandTitle(onTrigger: () -> Unit) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) 0.97f else 1f,
+        animationSpec = tween(110),
+        label = "brand-title-press",
+    )
+    val haptic = LocalHapticFeedback.current
+    var tapCount by remember { mutableIntStateOf(0) }
+    var tapWindowStartedAt by remember { mutableLongStateOf(0L) }
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(44.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+            ) {
+                val now = SystemClock.elapsedRealtime()
+                if (tapWindowStartedAt == 0L || now - tapWindowStartedAt > 3_000L) {
+                    tapWindowStartedAt = now
+                    tapCount = 1
+                } else {
+                    tapCount += 1
+                }
+                if (tapCount >= 5) {
+                    tapCount = 0
+                    tapWindowStartedAt = 0L
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onTrigger()
+                }
+            }
+            .padding(horizontal = 12.dp),
+    ) {
+        Text(
+            "相念",
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
+}
+
+@Composable
+private fun BirthdayCelebrationOverlay(
+    trigger: Int,
+    modifier: Modifier = Modifier,
+) {
+    val progress = remember { Animatable(1f) }
+    LaunchedEffect(trigger) {
+        if (trigger <= 0) return@LaunchedEffect
+        progress.snapTo(0f)
+        progress.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(
+                durationMillis = 9_000,
+                easing = CubicBezierEasing(0.25f, 1f, 0.5f, 1f),
+            ),
+        )
+    }
+    if (progress.value >= 1f) return
+
+    val value = progress.value
+    val fade = (1f - ((value - 0.90f) / 0.10f)).coerceIn(0f, 1f)
+    val badgeEnter = (value / 0.12f).coerceIn(0f, 1f)
+    Box(
+        modifier = modifier.graphicsLayer { alpha = fade },
+    ) {
+        Canvas(Modifier.fillMaxSize()) {
+            val pink = Color(0xFFE54886)
+            val lightPink = Color(0xFFFF8FB8)
+            val gold = Color(0xFFFFC857)
+            val cream = Color(0xFFFFF5E8)
+            drawCircle(
+                color = Color(0xFFFFEAF2).copy(alpha = 0.72f * fade),
+                radius = size.width * 0.44f,
+                center = Offset(size.width / 2f, size.height * 0.48f),
+            )
+
+            val balloonProgress = (value / 0.92f).coerceIn(0f, 1f)
+            repeat(5) { index ->
+                val xBase = size.width * (0.12f + index * 0.19f)
+                val x = xBase + sin(value * 11f + index * 1.4f) * 14.dp.toPx()
+                val y = size.height * (0.88f - balloonProgress * 0.92f) + (index % 2) * 52.dp.toPx()
+                val balloonColor = if (index % 2 == 0) pink else if (index == 3) gold else lightPink
+                drawLine(
+                    color = balloonColor.copy(alpha = 0.62f * fade),
+                    start = Offset(x, y + 31.dp.toPx()),
+                    end = Offset(x + sin(index * 2.1f) * 12.dp.toPx(), y + 88.dp.toPx()),
+                    strokeWidth = 1.4.dp.toPx(),
+                )
+                drawOval(
+                    color = balloonColor.copy(alpha = 0.88f * fade),
+                    topLeft = Offset(x - 23.dp.toPx(), y - 29.dp.toPx()),
+                    size = Size(46.dp.toPx(), 58.dp.toPx()),
+                )
+                drawCircle(
+                    color = Color.White.copy(alpha = 0.42f * fade),
+                    radius = 5.dp.toPx(),
+                    center = Offset(x - 8.dp.toPx(), y - 12.dp.toPx()),
+                )
+            }
+
+            val cannonAlpha = (1f - value / 0.38f).coerceIn(0f, 1f)
+            val origins = listOf(
+                Offset(size.width * 0.08f, size.height * 0.88f),
+                Offset(size.width * 0.92f, size.height * 0.88f),
+            )
+            drawLine(
+                color = pink.copy(alpha = cannonAlpha),
+                start = origins[0],
+                end = Offset(size.width * 0.17f, size.height * 0.78f),
+                strokeWidth = 24.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            drawLine(
+                color = pink.copy(alpha = cannonAlpha),
+                start = origins[1],
+                end = Offset(size.width * 0.83f, size.height * 0.78f),
+                strokeWidth = 24.dp.toPx(),
+                cap = StrokeCap.Round,
+            )
+            drawCircle(gold.copy(alpha = cannonAlpha), 10.dp.toPx(), origins[0])
+            drawCircle(gold.copy(alpha = cannonAlpha), 10.dp.toPx(), origins[1])
+
+            val colors = listOf(
+                pink,
+                lightPink,
+                gold,
+                Color.White,
+                Color(0xFFB92F68),
+            )
+            repeat(72) { index ->
+                val fromLeft = index % 2 == 0
+                val lane = index / 2
+                val delay = (lane % 5) * 0.045f
+                val flight = ((value - delay) / (0.70f - delay)).coerceIn(0f, 1f)
+                val direction = if (fromLeft) 1f else -1f
+                val originX = if (fromLeft) size.width * 0.16f else size.width * 0.84f
+                val spread = 0.12f + (lane % 9) * 0.025f
+                val lift = 0.46f + (lane % 7) * 0.035f
+                val x = originX + direction * size.width * spread * flight +
+                    sin(lane * 1.7f + value * 9f) * size.width * 0.015f
+                val y = size.height * 0.78f - size.height * lift * flight +
+                    size.height * (0.16f + (lane % 4) * 0.018f) * flight * flight
+                val pieceWidth = (5 + lane % 4).dp.toPx()
+                val pieceHeight = (10 + lane % 5).dp.toPx()
+                rotate(
+                    degrees = lane * 23f + value * (220f + (lane % 5) * 35f),
+                    pivot = Offset(x, y),
+                ) {
+                    drawRect(
+                        color = colors[index % colors.size].copy(alpha = fade),
+                        topLeft = Offset(x - pieceWidth / 2f, y - pieceHeight / 2f),
+                        size = Size(pieceWidth, pieceHeight),
+                    )
+                }
+            }
+
+            val cakeEnter = ((value - 0.08f) / 0.18f).coerceIn(0f, 1f)
+            val cakeCenterX = size.width / 2f
+            val cakeBaseY = size.height * 0.76f + (1f - cakeEnter) * 90.dp.toPx()
+            drawRoundRect(
+                color = cream.copy(alpha = fade),
+                topLeft = Offset(cakeCenterX - 88.dp.toPx(), cakeBaseY - 10.dp.toPx()),
+                size = Size(176.dp.toPx(), 62.dp.toPx()),
+                cornerRadius = CornerRadius(18.dp.toPx()),
+            )
+            drawRoundRect(
+                color = lightPink.copy(alpha = fade),
+                topLeft = Offset(cakeCenterX - 88.dp.toPx(), cakeBaseY - 10.dp.toPx()),
+                size = Size(176.dp.toPx(), 24.dp.toPx()),
+                cornerRadius = CornerRadius(18.dp.toPx()),
+            )
+            repeat(7) { index ->
+                drawCircle(
+                    color = pink.copy(alpha = fade),
+                    radius = 7.dp.toPx(),
+                    center = Offset(cakeCenterX - 66.dp.toPx() + index * 22.dp.toPx(), cakeBaseY + 18.dp.toPx()),
+                )
+            }
+            repeat(3) { index ->
+                val candleX = cakeCenterX + (index - 1) * 34.dp.toPx()
+                drawRoundRect(
+                    color = gold.copy(alpha = fade),
+                    topLeft = Offset(candleX - 3.dp.toPx(), cakeBaseY - 43.dp.toPx()),
+                    size = Size(6.dp.toPx(), 35.dp.toPx()),
+                    cornerRadius = CornerRadius(3.dp.toPx()),
+                )
+                val flamePulse = 1f + sin(value * 45f + index) * 0.18f
+                drawOval(
+                    color = Color(0xFFFF8A3D).copy(alpha = fade),
+                    topLeft = Offset(candleX - 5.dp.toPx() * flamePulse, cakeBaseY - 58.dp.toPx()),
+                    size = Size(10.dp.toPx() * flamePulse, 17.dp.toPx()),
+                )
+            }
+
+            fun drawHeart(center: Offset, scale: Float, color: Color) {
+                val path = Path().apply {
+                    moveTo(center.x, center.y + 14.dp.toPx() * scale)
+                    cubicTo(
+                        center.x - 30.dp.toPx() * scale, center.y - 3.dp.toPx() * scale,
+                        center.x - 18.dp.toPx() * scale, center.y - 25.dp.toPx() * scale,
+                        center.x, center.y - 10.dp.toPx() * scale,
+                    )
+                    cubicTo(
+                        center.x + 18.dp.toPx() * scale, center.y - 25.dp.toPx() * scale,
+                        center.x + 30.dp.toPx() * scale, center.y - 3.dp.toPx() * scale,
+                        center.x, center.y + 14.dp.toPx() * scale,
+                    )
+                    close()
+                }
+                drawPath(path, color.copy(alpha = 0.78f * fade))
+            }
+            val heartPulse = 0.90f + sin(value * 30f) * 0.10f
+            drawHeart(Offset(size.width * 0.22f, size.height * 0.43f), heartPulse, pink)
+            drawHeart(Offset(size.width * 0.78f, size.height * 0.39f), heartPulse * 0.86f, lightPink)
+            repeat(6) { index ->
+                val x = size.width * (0.16f + index * 0.14f)
+                val y = size.height * (0.24f + (index % 2) * 0.13f)
+                val sparkle = (9 + index % 3 * 3).dp.toPx()
+                drawLine(gold.copy(alpha = fade), Offset(x - sparkle, y), Offset(x + sparkle, y), 2.dp.toPx(), StrokeCap.Round)
+                drawLine(gold.copy(alpha = fade), Offset(x, y - sparkle), Offset(x, y + sparkle), 2.dp.toPx(), StrokeCap.Round)
+            }
+        }
+        Surface(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .graphicsLayer {
+                    alpha = badgeEnter
+                    scaleX = 0.88f + 0.12f * badgeEnter
+                    scaleY = 0.88f + 0.12f * badgeEnter
+                },
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
+            contentColor = MaterialTheme.colorScheme.primary,
+            shape = RoundedCornerShape(26.dp),
+            shadowElevation = 18.dp,
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)),
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 34.dp, vertical = 20.dp),
+            ) {
+                Text(
+                    text = "生日快乐",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    text = "彩蛋已开启",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 
@@ -232,6 +510,8 @@ private fun EInkPhotoAppContent(
     val storageRepository = remember { LanStorageRepository() }
     val powerRepository = remember { LanPowerRepository() }
     val audioRepository = remember { LanAudioRepository() }
+    val easterEggClient = remember { DevelopmentApHttpClient() }
+    val actionScope = rememberCoroutineScope()
     val powerSnapshot by powerRepository.snapshot.collectAsState()
     var globalWarning by remember { mutableStateOf<String?>(null) }
     var observedCooldownRejectionSequence by remember { mutableStateOf<Long?>(null) }
@@ -242,6 +522,38 @@ private fun EInkPhotoAppContent(
     var showDeviceDiagnostics by rememberSaveable { mutableStateOf(false) }
     var showAppUpdate by rememberSaveable { mutableStateOf(false) }
     var handledModeSwitchJob by rememberSaveable { mutableStateOf<String?>(null) }
+    var easterEggCelebrationId by remember { mutableIntStateOf(0) }
+    val triggerBirthdayEasterEgg: () -> Unit = {
+        if (snapshot.connection != DeviceConnectionState.Online) {
+            actionScope.launch {
+                globalWarning = "相框未连接，暂时无法开启彩蛋"
+                delay(3_000L)
+                globalWarning = null
+            }
+        } else {
+            actionScope.launch {
+                easterEggClient.postJson(
+                    "/api/v1/xiaozhi/birthday-easter-egg",
+                    JSONObject(),
+                ).onSuccess { root ->
+                    val code = root.optString("code")
+                    if (code == "easter_egg_started" || code == "easter_egg_already_visible") {
+                        easterEggCelebrationId += 1
+                    }
+                }.onFailure { error ->
+                    if (error.message != "display_cooldown") {
+                        globalWarning = when (error.message) {
+                            "display_busy" -> "墨水屏正在刷新，请稍后再试"
+                            "easter_egg_unavailable" -> "彩蛋画面暂时不可用"
+                            else -> "彩蛋没有开启，请确认相框连接正常"
+                        }
+                        delay(3_000L)
+                        globalWarning = null
+                    }
+                }
+            }
+        }
+    }
     // The badge is device state, not an optimistic network label.  Keep it
     // current while this composition is alive so powering off the frame (or
     // losing either AP or STA reachability) clears a stale "connected" badge.
@@ -390,10 +702,7 @@ private fun EInkPhotoAppContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             modifier = Modifier.graphicsLayer { alpha = brandTitleAlpha },
                         ) {
-                            Text(
-                                "相念",
-                                style = MaterialTheme.typography.titleMedium,
-                            )
+                            EasterEggBrandTitle(onTrigger = triggerBirthdayEasterEgg)
                             Text(
                                 "一帧静好，一念长久。",
                                 style = MaterialTheme.typography.labelSmall,
@@ -535,6 +844,12 @@ private fun EInkPhotoAppContent(
                 onDestinationSelected(destination)
             },
             modifier = Modifier.align(Alignment.BottomCenter),
+        )
+        BirthdayCelebrationOverlay(
+            trigger = easterEggCelebrationId,
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(18f),
         )
         AnimatedVisibility(
             visible = globalWarning != null,
