@@ -88,7 +88,7 @@ class AppUpdateViewModel(private val context: Context) : ViewModel() {
     }
 
     private fun checkErrorMessage(code: String?): String = when {
-        code == "invalid_update_url" -> "当前更新服务器仅支持 HTTP，已暂停 App 内下载安装；请使用已确认的安装包手动更新"
+        code == "invalid_update_url" -> "更新地址不在可信服务器范围内，已停止下载"
         code == "http_404" || code?.contains("404") == true -> "暂未发布线上更新版本，发布 Release 后即可检查更新"
         code == "http_401" || code == "http_403" || code?.contains("401") == true || code?.contains("403") == true -> "无权读取更新信息，请检查远程发布权限"
         code in setOf("unsupported_channel", "package_mismatch", "invalid_version", "invalid_apk_url", "invalid_checksum", "invalid_size") -> "远程更新信息格式无效，未执行下载"
@@ -99,6 +99,9 @@ class AppUpdateViewModel(private val context: Context) : ViewModel() {
 
     private fun downloadErrorMessage(code: String?): String = when (code) {
         "checksum_mismatch" -> "更新包校验失败，已删除该文件，请重新下载"
+        "apk_package_mismatch" -> "更新包身份不匹配，已阻止安装"
+        "apk_signature_mismatch" -> "更新包签名与当前 App 不一致，已阻止安装"
+        "invalid_apk" -> "更新包格式无效，已阻止安装"
         "download_incomplete" -> "下载未完成，请检查网络后重试"
         "http_404" -> "未找到远程 APK，请检查发布版本"
         else -> "下载更新包失败，请稍后重试"

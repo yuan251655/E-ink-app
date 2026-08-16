@@ -2,7 +2,10 @@ package com.einkphoto.app.feature.settings.appupdate
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.os.Build
 import androidx.core.content.FileProvider
 import com.einkphoto.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
@@ -12,6 +15,7 @@ import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
+import java.net.URI
 import java.net.URL
 import java.security.MessageDigest
 
@@ -72,6 +76,9 @@ class AppUpdateRepository(private val context: Context) {
                     temporary.delete()
                     error("checksum_mismatch")
                 }
+                runCatching { verifyArchiveIdentity(temporary) }
+                    .onFailure { temporary.delete() }
+                    .getOrThrow()
                 check(temporary.renameTo(target)) { "download_commit_failed" }
                 target
             }
@@ -97,7 +104,7 @@ class AppUpdateRepository(private val context: Context) {
         require(channel == "stable") { "unsupported_channel" }
         require(packageName == context.packageName) { "package_mismatch" }
         require(versionName.isNotBlank() && versionCode > 0) { "invalid_version" }
-        require(isSupportedUpdateUrl(apkUrl)) { "invalid_apk_url" }
+        require(isTrustedUpdateUrl(apkUrl)) { "invalid_apk_url" }
         require(sha256.matches(Regex("[0-9a-f]{64}"))) { "invalid_checksum" }
         require(sizeBytes > 0) { "invalid_size" }
         return AppRelease(
@@ -115,7 +122,7 @@ class AppUpdateRepository(private val context: Context) {
     }
 
     private fun openUpdateConnection(url: String): HttpURLConnection {
-        require(isSupportedUpdateUrl(url)) { "invalid_update_url" }
+        require(isTrustedUpdateUrl(url)) { "invalid_update_url" }
         return (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 15_000
             readTimeout = 30_000
@@ -130,6 +137,41 @@ class AppUpdateRepository(private val context: Context) {
         }
     }
 
-    private fun isSupportedUpdateUrl(url: String): Boolean =
-        url.startsWith("https://")
+    private fun verifyArchiveIdentity(apk: File) {
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            PackageManager.GET_SIGNING_CERTIFICATES
+        } else {
+            @Suppress("DEPRECATION")
+            PackageManager.GET_SIGNATURES
+        }
+        val installed = context.packageManager.getPackageInfo(context.packageName, flags)
+        val archive = context.packageManager.getPackageArchiveInfo(apk.absolutePath, flags)
+            ?: error("invalid_apk")
+        require(archive.packageName == context.packageName) { "apk_package_mismatch" }
+        require(signatureDigests(archive) == signatureDigests(installed)) { "apk_signature_mismatch" }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun signatureDigests(info: PackageInfo): Set<String> {
+        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners.orEmpty()
+        } else {
+            info.signatures.orEmpty()
+        }
+        return signatures.mapTo(mutableSetOf()) { signature ->
+            MessageDigest.getInstance("SHA-256").digest(signature.toByteArray())
+                .joinToString("") { "%02x".format(it) }
+        }
+    }
 }
+
+internal fun isTrustedUpdateUrl(url: String): Boolean = runCatching {
+    val uri = URI(url)
+    if (uri.userInfo != null || uri.host.isNullOrBlank() || uri.fragment != null) return@runCatching false
+    if (uri.scheme.equals("https", ignoreCase = true)) return@runCatching true
+    uri.scheme.equals("http", ignoreCase = true) &&
+        uri.host == "107.173.157.41" &&
+        uri.port == 3000 &&
+        (uri.path == "/yj/E-ink-APP/raw/branch/main/release-manifest/stable.json" ||
+            uri.path.startsWith("/yj/E-ink-APP/releases/download/"))
+}.getOrDefault(false)
