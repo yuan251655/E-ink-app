@@ -34,9 +34,8 @@ android {
         applicationId = "com.einkphoto.app"
         minSdk = 26
         targetSdk = 36
-        // Bump this migration build so Android cannot retain the pre-Seedream-direct APK.
-        versionCode = 17
-        versionName = "1.0.5-ai-home-fixes"
+        versionCode = 18
+        versionName = "2.0.0"
         buildConfigField("String", "APP_UPDATE_MANIFEST_URL", "\"$appUpdateManifestUrl\"")
     }
 

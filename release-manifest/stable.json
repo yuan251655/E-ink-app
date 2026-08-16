@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "1.0.1",
-  "version_code": 13,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v1.0.1/eink-photo-v1.0.1.apk",
-  "sha256": "045f5150087c15255e519c0b56e87c34cc4df5b497a7cd329b1f323549102212",
-  "size_bytes": 11346134,
-  "release_notes": "v1.0.1：新增 AI 模型档案与切换，优化 AI 轮播和创作记录浏览。",
+  "version_name": "2.0.0",
+  "version_code": 18,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.0/eink-photo-v2.0.0.apk",
+  "sha256": "9ecf0c5fa645df2bba0d109bc90260b1d7102d6e39e534d8469e07cb47a50ec3",
+  "size_bytes": 12962911,
+  "release_notes": "相念 v2.0.0：完成 AI 相册、照片风格转换、信息看板、电源休眠、小智语音控制与整体界面优化，并新增横竖屏轮播策略。",
   "force_update": false,
   "min_supported_version_code": 1
 }
