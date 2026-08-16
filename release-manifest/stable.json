@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "2.0.1",
-  "version_code": 19,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.1/eink-photo-v2.0.1.apk",
-  "sha256": "b8d30c486f76c52329e6e775e2cd24f08206f8a1842fa0cb0faf27447087ff75",
-  "size_bytes": 12962911,
-  "release_notes": "相念 v2.0.1：修复应用内更新无法连接服务器的问题；HTTP 仅对白名单发布仓库开放，并增加 APK 包名、签名、大小和 SHA-256 校验。",
+  "version_name": "2.0.2",
+  "version_code": 20,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.2/eink-photo-v2.0.2.apk",
+  "sha256": "af625577cdc74cc5f6facca1ae6d42f327d5211f340f90b38b4a715300aef7df",
+  "size_bytes": 12979295,
+  "release_notes": "相念 v2.0.2：重新设计应用更新页面，隐藏内部构建编号，合并重复状态信息，并将更新操作固定在页面底部。",
   "force_update": false,
   "min_supported_version_code": 1
 }
