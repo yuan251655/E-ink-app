@@ -13,7 +13,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DeviceEndpointConfig.initialize(applicationContext)
-        DeviceLanNetworkBinder.bindPreferredWifi(applicationContext)
+        DeviceLanNetworkBinder.start(applicationContext)
         VoiceGenerationServiceController.restoreIfEnabled(applicationContext)
         enableEdgeToEdge()
         setContent { EInkPhotoApp() }

@@ -150,9 +150,12 @@ class LanDeviceSession(private val transport: LanDeviceTransport) : DeviceSessio
                 capabilities = null,
             )
         }
-        val capabilities = transport.capabilities().orReject() ?: return@withLock rejectOffline()
-        val status = transport.status().orReject() ?: return@withLock rejectOffline()
-        val mode = transport.mode().orReject() ?: return@withLock rejectOffline()
+        // Health already proved the frame is reachable.  A later auxiliary
+        // read may be delayed behind a TF/network operation; keep the UI in
+        // reconnecting instead of falsely returning it to "offline".
+        val capabilities = transport.capabilities().orReject() ?: return@withLock rejectReconnecting()
+        val status = transport.status().orReject() ?: return@withLock rejectReconnecting()
+        val mode = transport.mode().orReject() ?: return@withLock rejectReconnecting()
         val updated = DeviceSnapshot(
             deviceId = health.deviceId,
             displayName = health.displayName,
@@ -210,6 +213,11 @@ class LanDeviceSession(private val transport: LanDeviceTransport) : DeviceSessio
 
     private fun rejectOffline(): DeviceCommandResult<DeviceSnapshot> {
         mutableSnapshot.value = mutableSnapshot.value.copy(connection = DeviceConnectionState.Offline, capabilities = null)
+        return DeviceCommandResult.Rejected(DeviceRejection.Offline)
+    }
+
+    private fun rejectReconnecting(): DeviceCommandResult<DeviceSnapshot> {
+        mutableSnapshot.value = mutableSnapshot.value.copy(connection = DeviceConnectionState.Reconnecting)
         return DeviceCommandResult.Rejected(DeviceRejection.Offline)
     }
 }

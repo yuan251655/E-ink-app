@@ -20,9 +20,18 @@ class LanNetworkRepository(private val client: DevelopmentApHttpClient = Develop
             val internet = when (data.optJSONObject("internet")?.optString("state")) { "reachable" -> InternetState.Reachable; "unreachable" -> InternetState.Unreachable; else -> InternetState.Unknown }
             val staIp = sta.optString("ip").takeIf { it.isNotBlank() }
             if (state == StaState.Connected && staIp != null) DeviceEndpointConfig.rememberStaAddress(staIp)
+            val profiles = data.optJSONArray("saved_sta_profiles")?.let { items ->
+                buildList {
+                    for (index in 0 until items.length()) {
+                        val profile = items.optJSONObject(index) ?: continue
+                        val ssid = profile.optString("ssid").trim()
+                        if (ssid.isNotEmpty()) add(SavedWifiNetwork(ssid, profile.optBoolean("active")))
+                    }
+                }
+            } ?: listOfNotNull(sta.optString("ssid").takeIf { it.isNotBlank() }?.let { SavedWifiNetwork(it, true) })
             mutableSnapshot.value = NetworkSnapshot(data.optString("api_version", "v1"), data.optString("device_id", "unknown"), data.optLong("revision", 0),
                 ApStatus(ap.optBoolean("enabled"), ap.optString("ssid"), ap.optString("ip"), ap.optInt("channel"), ap.optInt("connected_clients")),
-                StaStatus(sta.optBoolean("enabled"), state, sta.optString("ssid").takeIf { it.isNotBlank() }, staIp, sta.optString("gateway").takeIf { it.isNotBlank() }, if (sta.has("rssi_dbm")) sta.optInt("rssi_dbm") else null, sta.optString("last_error_code").takeIf { it.isNotBlank() }), internet)
+                StaStatus(sta.optBoolean("enabled"), state, sta.optString("ssid").takeIf { it.isNotBlank() }, staIp, sta.optString("gateway").takeIf { it.isNotBlank() }, if (sta.has("rssi_dbm")) sta.optInt("rssi_dbm") else null, sta.optString("last_error_code").takeIf { it.isNotBlank() }), internet, profiles)
             NetworkActionResult.Accepted
         }, onFailure = { NetworkActionResult.Rejected("network_unavailable", "相框未连接：请确认相框已开机，并让手机与相框连接到同一网络后重试") })
 
@@ -46,6 +55,14 @@ class LanNetworkRepository(private val client: DevelopmentApHttpClient = Develop
             onSuccess = { refresh() }, onFailure = { NetworkActionResult.Rejected("sta_connect_failed", "未能连接此 Wi-Fi；原有网络配置保持不变") },
         )
     }
+
+    override suspend fun activateSavedSta(ssid: String): NetworkActionResult = client.postJson(
+        "/api/v1/network/sta/activate", JSONObject().put("ssid", ssid),
+    ).fold(onSuccess = { refresh() }, onFailure = { NetworkActionResult.Rejected("sta_connect_failed", "未能切换到此 Wi-Fi；请确认网络仍可用") })
+
+    override suspend fun forgetSavedSta(ssid: String): NetworkActionResult = client.deleteJson(
+        "/api/v1/network/sta/profile", JSONObject().put("ssid", ssid),
+    ).fold(onSuccess = { refresh() }, onFailure = { NetworkActionResult.Rejected("sta_forget_failed", "无法删除此 Wi-Fi") })
 
     override suspend fun disableSta(): NetworkActionResult = client.deleteJson("/api/v1/network/sta", JSONObject()).fold(
         onSuccess = { refresh() }, onFailure = { NetworkActionResult.Rejected("sta_forget_failed", "无法清除已保存的 Wi-Fi 配置") },

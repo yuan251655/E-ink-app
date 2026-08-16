@@ -408,44 +408,89 @@ private fun NetworkConfigurationPage(repository: NetworkRepository, contentPaddi
     val state by repository.snapshot.collectAsState(); val scope = rememberCoroutineScope()
     var scanning by remember { mutableStateOf(false) }; var networks by remember { mutableStateOf<List<WifiNetwork>>(emptyList()) }
     var message by remember { mutableStateOf<String?>(null) }; var staDialog by remember { mutableStateOf<String?>(null) }
-    var editAp by remember { mutableStateOf(false) }; var confirmRestore by remember { mutableStateOf(false) }; var confirmForget by remember { mutableStateOf(false) }
+    var testingSta by remember { mutableStateOf(false) }
+    var editAp by remember { mutableStateOf(false) }; var confirmRestore by remember { mutableStateOf(false) }
+    var showApSettings by remember { mutableStateOf(false) }; var confirmActivate by remember { mutableStateOf<String?>(null) }; var confirmDelete by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(repository) { repository.refresh() }
     Column(
         Modifier.fillMaxSize().padding(contentPadding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
         Text("网络配置", style = MaterialTheme.typography.headlineSmall)
         ConnectionSummary(state)
-        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("相框热点（AP）", style = MaterialTheme.typography.titleMedium)
-            Text("${state.ap.ssid}  ·  ${state.ap.ip}")
-            Text("信道 ${state.ap.channel}  ·  已连接设备 ${state.ap.clientCount}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Button(onClick = { editAp = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("修改热点名称和密码") }
-            OutlinedButton(onClick = { confirmRestore = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("恢复默认热点") }
-        } }
-        Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("家庭 Wi-Fi（STA）", style = MaterialTheme.typography.titleMedium)
-            Text(staDescription(state), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (state.sta.ip != null) Text("IP：${state.sta.ip}    网关：${state.sta.gateway ?: "—"}")
-            Button(enabled = !scanning, onClick = { scope.launch { scanning = true; message = null; repository.scan24Ghz().onSuccess { networks = it }.onFailure { message = "扫描失败，请确认相框在线后重试" }; scanning = false } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { AsyncButtonContent(scanning, "扫描 2.4 GHz Wi-Fi", "正在扫描…") }
-            networks.forEach { network -> Row(Modifier.fillMaxWidth().pressFeedbackClickable { staDialog = network.ssid }.padding(vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(network.ssid); Text("信号 ${network.rssiDbm} dBm  ·  信道 ${network.channel}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }; Text(network.security.name.uppercase()) } }
-            OutlinedButton(onClick = { staDialog = "" }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("其他网络") }
-            if (state.sta.state != StaState.Disabled || state.sta.ssid != null) OutlinedButton(onClick = { confirmForget = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("忘记已保存的 Wi-Fi") }
-        } }
-        Text("AP 网页配网会一直保留，无法通过 App 连接时仍可连接相框热点后访问 192.168.4.1。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("已保存的 Wi-Fi", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SavedNetworksPanel(
+            networks = state.savedNetworks,
+            onActivate = { confirmActivate = it },
+            onDelete = { confirmDelete = it },
+        )
+        Button(enabled = !scanning, onClick = {
+            scope.launch {
+                scanning = true; message = null
+                repository.scan24Ghz().onSuccess { networks = it }.onFailure { message = "扫描失败，请确认相框在线后重试" }
+                scanning = false
+            }
+        }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { AsyncButtonContent(scanning, "添加 Wi-Fi", "正在查找 2.4 GHz Wi-Fi…") }
+        if (networks.isNotEmpty()) {
+            Text("附近的 2.4 GHz Wi-Fi", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Card(Modifier.fillMaxWidth()) {
+                Column {
+                    networks.forEachIndexed { index, network ->
+                        if (index > 0) HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                        Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).pressFeedbackClickable { staDialog = network.ssid }.padding(horizontal = 16.dp, vertical = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Text(network.ssid, style = MaterialTheme.typography.titleMedium)
+                                Text("信号 ${network.rssiDbm} dBm · 信道 ${network.channel} · ${network.security.name.uppercase()}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Text("连接", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                        }
+                    }
+                }
+            }
+        }
+        OutlinedButton(onClick = { staDialog = "" }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("手动添加其他 Wi-Fi") }
+        Text("恢复与高级设置", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Card(Modifier.fillMaxWidth()) {
+            Column {
+                Row(Modifier.fillMaxWidth().heightIn(min = 68.dp).pressFeedbackClickable { showApSettings = !showApSettings }.padding(horizontal = 16.dp, vertical = 12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("相框热点", style = MaterialTheme.typography.titleMedium)
+                        Text("${state.ap.ssid} · ${state.ap.ip}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Text(if (showApSettings) "收起" else "管理", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+                }
+                if (showApSettings) {
+                    HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant)
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("热点始终保留，用于失联恢复。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedButton(onClick = { editAp = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("修改热点名称和密码") }
+                        TextButton(onClick = { confirmRestore = true }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("恢复默认热点") }
+                    }
+                }
+            }
+        }
         message?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-        OutlinedButton(onClick = { scope.launch { repository.refresh() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { Text("刷新状态") }
+        TextButton(onClick = { scope.launch { repository.refresh() } }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("刷新网络状态") }
     }
     if (editAp) ApDialog(state, { editAp = false }) { draft -> scope.launch { message = resultMessage(repository.saveAp(draft), "热点设置已保存。若手机通过该热点连接，请重新连接新热点。"); editAp = false } }
-    staDialog?.let { initial -> StaDialog(initial, { staDialog = null }) { draft -> scope.launch { message = resultMessage(repository.testAndSaveSta(draft), "Wi-Fi 已连接并保存"); staDialog = null } } }
+    staDialog?.let { initial -> StaDialog(initial, testingSta, { if (!testingSta) staDialog = null }) { draft ->
+        if (!testingSta) scope.launch {
+            testingSta = true
+            message = null
+            message = resultMessage(repository.testAndSaveSta(draft), "Wi-Fi 已连接并保存")
+            testingSta = false
+            staDialog = null
+        }
+    } }
     if (confirmRestore) ConfirmDialog("恢复默认热点？", "将恢复 esp_network。已连接该热点的手机需要重新连接。", { confirmRestore = false }) { scope.launch { message = resultMessage(repository.restoreDefaultAp(), "已恢复默认热点"); confirmRestore = false } }
-    if (confirmForget) ConfirmDialog("忘记 Wi-Fi？", "只清除相框保存的 STA 配置，不影响热点和本地相册。", { confirmForget = false }) { scope.launch { message = resultMessage(repository.disableSta(), "已清除已保存的 Wi-Fi"); confirmForget = false } }
+    confirmActivate?.let { ssid -> ConfirmDialog("切换到 $ssid？", "相框会测试并切换网络，最多等待 12 秒。相框热点会一直保留。", { confirmActivate = null }) { scope.launch { message = resultMessage(repository.activateSavedSta(ssid), "已切换到 $ssid"); confirmActivate = null } } }
+    confirmDelete?.let { ssid -> ConfirmDialog("删除 $ssid？", if (state.savedNetworks.firstOrNull { it.ssid == ssid }?.active == true) "这是当前 Wi-Fi。删除后相框将停止使用它，但相框热点仍可连接。" else "删除后需要重新输入密码才能连接此 Wi-Fi。", { confirmDelete = null }) { scope.launch { message = resultMessage(repository.forgetSavedSta(ssid), "已删除 $ssid"); confirmDelete = null } } }
 }
 
-@Composable private fun ConnectionSummary(state: NetworkSnapshot) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp)) { Text(if (state.deviceId == "unknown") "相框未连接" else "相框已连接", style = MaterialTheme.typography.titleMedium); Text("AP、STA 和互联网是三个独立状态", color = MaterialTheme.colorScheme.onSurfaceVariant) } }
-private fun staDescription(state: NetworkSnapshot) = when (state.sta.state) { StaState.Connected -> "已连接 ${state.sta.ssid ?: "Wi-Fi"}"; StaState.Connecting -> "正在测试连接，原有配置不会被覆盖"; StaState.Failed -> "连接失败：${state.sta.errorCode ?: "请检查密码或 2.4 GHz 信号"}"; StaState.Disabled -> "尚未配置" }
+@Composable private fun ConnectionSummary(state: NetworkSnapshot) = Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) { Text(if (state.deviceId == "unknown") "相框未连接" else "相框可控制", style = MaterialTheme.typography.titleMedium); Text(when (state.sta.state) { StaState.Connected -> "家庭 Wi-Fi：${state.sta.ssid ?: "已连接"}"; StaState.Connecting -> "正在切换家庭 Wi-Fi…"; StaState.Failed -> "家庭 Wi-Fi 未连接，可继续使用相框热点"; StaState.Disabled -> "未设置家庭 Wi-Fi，可继续使用相框热点" }, color = MaterialTheme.colorScheme.onSurfaceVariant); state.sta.ip?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline) } } }
+@Composable private fun SavedNetworksPanel(networks: List<com.einkphoto.app.feature.settings.network.SavedWifiNetwork>, onActivate: (String) -> Unit, onDelete: (String) -> Unit) = Card(Modifier.fillMaxWidth()) { if (networks.isEmpty()) Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) { Text("还没有保存 Wi-Fi", style = MaterialTheme.typography.titleMedium); Text("添加后，相框可连接家庭网络并使用天气和小智。", color = MaterialTheme.colorScheme.onSurfaceVariant) } else Column { networks.forEachIndexed { index, network -> if (index > 0) HorizontalDivider(modifier = Modifier.padding(start = 16.dp), color = MaterialTheme.colorScheme.outlineVariant); Row(Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) { Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) { Text(network.ssid, style = MaterialTheme.typography.titleMedium); Text(if (network.active) "正在使用" else "已保存", style = MaterialTheme.typography.bodySmall, color = if (network.active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant) }; if (!network.active) TextButton(onClick = { onActivate(network.ssid) }) { Text("切换") }; TextButton(onClick = { onDelete(network.ssid) }) { Text("删除") } } } } }
 private fun resultMessage(result: NetworkActionResult, success: String) = if (result is NetworkActionResult.Accepted) success else (result as NetworkActionResult.Rejected).message
 
 @Composable private fun ApDialog(state: NetworkSnapshot, onDismiss: () -> Unit, onSave: (ApConfigDraft) -> Unit) { var ssid by remember { mutableStateOf(state.ap.ssid) }; var password by remember { mutableStateOf("") }; AlertDialog(onDismissRequest = onDismiss, title = { Text("修改相框热点") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { Text("请输入新的密码。密码不会在 App 中回显或保存。"); OutlinedTextField(ssid, { ssid = it }, label = { Text("热点名称") }); OutlinedTextField(password, { password = it }, label = { Text("新密码") }, visualTransformation = PasswordVisualTransformation()) } }, confirmButton = { TextButton(onClick = { onSave(ApConfigDraft(ssid, password)) }) { Text("保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }) }
-@Composable private fun StaDialog(initialSsid: String, onDismiss: () -> Unit, onSave: (StaConfigDraft) -> Unit) { var ssid by remember { mutableStateOf(initialSsid) }; var password by remember { mutableStateOf("") }; AlertDialog(onDismissRequest = onDismiss, title = { Text("连接 2.4 GHz Wi-Fi") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { if (initialSsid.isEmpty()) OutlinedTextField(ssid, { ssid = it }, label = { Text("Wi-Fi 名称") }); OutlinedTextField(password, { password = it }, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation()); Text("相框会先测试连接；失败时保留原有网络配置。", style = MaterialTheme.typography.bodySmall) } }, confirmButton = { TextButton(onClick = { onSave(StaConfigDraft(ssid, password)) }) { Text("测试并保存") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } }) }
+@Composable private fun StaDialog(initialSsid: String, testing: Boolean, onDismiss: () -> Unit, onSave: (StaConfigDraft) -> Unit) { var ssid by remember { mutableStateOf(initialSsid) }; var password by remember { mutableStateOf("") }; AlertDialog(onDismissRequest = onDismiss, title = { Text("连接 2.4 GHz Wi-Fi") }, text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { if (initialSsid.isEmpty()) OutlinedTextField(ssid, { ssid = it }, enabled = !testing, label = { Text("Wi-Fi 名称") }); OutlinedTextField(password, { password = it }, enabled = !testing, label = { Text("密码") }, visualTransformation = PasswordVisualTransformation()); Text(if (testing) "正在测试连接，最多等待 12 秒；请勿退出此页面。" else "相框会先测试连接；失败时保留原有网络配置。", style = MaterialTheme.typography.bodySmall) } }, confirmButton = { TextButton(enabled = !testing, onClick = { onSave(StaConfigDraft(ssid, password)) }) { Text(if (testing) "正在测试…" else "测试并保存") } }, dismissButton = { TextButton(enabled = !testing, onClick = onDismiss) { Text("取消") } }) }
 @Composable private fun ConfirmDialog(title: String, body: String, onDismiss: () -> Unit, onConfirm: () -> Unit) = AlertDialog(onDismissRequest = onDismiss, title = { Text(title) }, text = { Text(body) }, confirmButton = { TextButton(onClick = onConfirm) { Text("确认") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } })

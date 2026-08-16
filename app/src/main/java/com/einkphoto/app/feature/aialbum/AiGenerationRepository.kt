@@ -17,6 +17,7 @@ import java.io.File
 import java.io.FileInputStream
 import java.security.MessageDigest
 import java.util.UUID
+import kotlinx.coroutines.delay
 import org.json.JSONObject
 
 /**
@@ -117,27 +118,33 @@ class AiGenerationRepository(
         )
         val bin = File(requireNotNull(Uri.parse(draft.candidateBinUri).path)).canonicalFile
         require(bin.isFile && bin.length() == AI_DISPLAY_PROFILE.frameBytes.toLong()) { "bin_conversion_failed" }
-        client.uploadBinOnly(
-            DeviceMediaUploadRequest(
-                requestId = "ai-save-$historyId".take(64),
-                category = DeviceMediaCategory.Ai,
-                displayName = "AI 图片",
-                imageBinFile = bin,
-                imageBinSizeBytes = bin.length(),
-                imageBinSha256 = sha256(bin),
-                displayProfile = DeviceMediaDisplayProfile(
-                    widthPx = AI_DISPLAY_PROFILE.widthPx,
-                    heightPx = AI_DISPLAY_PROFILE.heightPx,
-                    frameBytes = AI_DISPLAY_PROFILE.frameBytes,
-                    pixelFormat = "4bpp",
-                    palette = "six_color_e6",
-                    orientation = "landscape",
-                    rotationDegrees = 0,
-                    fitMode = "cover",
-                    converterVersion = draft.algorithmVersion,
-                ),
+        val request = DeviceMediaUploadRequest(
+            requestId = "ai-save-$historyId".take(64),
+            category = DeviceMediaCategory.Ai,
+            displayName = "AI 图片",
+            imageBinFile = bin,
+            imageBinSizeBytes = bin.length(),
+            imageBinSha256 = sha256(bin),
+            displayProfile = DeviceMediaDisplayProfile(
+                widthPx = AI_DISPLAY_PROFILE.widthPx,
+                heightPx = AI_DISPLAY_PROFILE.heightPx,
+                frameBytes = AI_DISPLAY_PROFILE.frameBytes,
+                pixelFormat = "4bpp",
+                palette = "six_color_e6",
+                orientation = "landscape",
+                rotationDegrees = 0,
+                fitMode = "cover",
+                converterVersion = draft.algorithmVersion,
             ),
-        ).getOrThrow().optJSONObject("data")?.optString("job_id")
+        )
+        val upload = client.uploadBinOnly(request)
+        // The ESP's multipart reader can reject one interrupted LAN request before it starts
+        // the TF transaction. Reusing the same id is idempotent if it actually did admit it.
+        val response = if (upload.exceptionOrNull()?.message == "invalid_request") {
+            delay(700)
+            client.uploadBinOnly(request).getOrThrow()
+        } else upload.getOrThrow()
+        response.optJSONObject("data")?.optString("job_id")
             ?.takeIf(::isSafeJobId)
             ?: error("invalid_upload_job")
     }

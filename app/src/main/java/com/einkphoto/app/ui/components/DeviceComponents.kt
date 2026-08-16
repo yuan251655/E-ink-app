@@ -54,7 +54,7 @@ fun DeviceConnectionBadge(snapshot: DeviceSnapshot, modifier: Modifier = Modifie
     val label = when (snapshot.connection) {
         DeviceConnectionState.Online -> "已连接"
         DeviceConnectionState.Connecting -> "正在连接…"
-        DeviceConnectionState.Reconnecting -> "相框正在唤醒…"
+        DeviceConnectionState.Reconnecting -> "正在恢复连接…"
         DeviceConnectionState.Sleeping -> "休眠中"
         DeviceConnectionState.Offline -> "未连接"
     }

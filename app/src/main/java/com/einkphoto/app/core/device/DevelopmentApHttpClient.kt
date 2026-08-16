@@ -21,7 +21,7 @@ import kotlinx.coroutines.ensureActive
 /** Versioned device HTTP client. The endpoint is read for every request so AP/STA switching takes effect immediately. */
 class DevelopmentApHttpClient {
     private val baseUrl: String get() = DeviceEndpointConfig.apiBaseUrl
-    suspend fun get(path: String, fastProbe: Boolean = false): Result<JSONObject> = deviceHttpMutex.withLock { withContext(Dispatchers.IO) {
+    suspend fun get(path: String, fastProbe: Boolean = false): Result<JSONObject> = (if (fastProbe) healthProbeMutex else deviceHttpMutex).withLock { withContext(Dispatchers.IO) {
         runCatching {
             // Reading the TF-backed media index can take noticeably longer
             // than the small health/status JSON responses, especially just
@@ -406,8 +406,10 @@ class DevelopmentApHttpClient {
     } }
 
     private companion object {
-        /** ESP HTTP is single-resource constrained; serialize every request across all clients. */
+        /** ESP HTTP is single-resource constrained; serialize ordinary requests across all clients. */
         val deviceHttpMutex = Mutex()
+        /** A bounded read-only health probe must not sit behind a media read or voice heartbeat. */
+        val healthProbeMutex = Mutex()
     }
 }
 

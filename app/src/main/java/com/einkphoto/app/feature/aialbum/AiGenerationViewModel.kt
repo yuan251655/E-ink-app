@@ -428,6 +428,7 @@ class AiGenerationViewModel(
         "storage_unavailable", "storage_write_failed" -> "TF 卡当前不可写，请检查相框存储状态"
         "unsupported" -> "当前相框固件不支持 AI 相册上传，请升级固件后重试"
         "checksum_mismatch", "media_incomplete" -> "图片传输校验失败，请重试保存"
+        "invalid_request" -> "相框拒绝了这次上传请求，请重试保存"
         "ai_job_busy" -> "相框正在处理其他任务"
         else -> "请检查相框连接后重试"
     }

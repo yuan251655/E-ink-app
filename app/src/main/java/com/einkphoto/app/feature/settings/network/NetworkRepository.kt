@@ -12,6 +12,8 @@ interface NetworkRepository {
     suspend fun refresh(): NetworkActionResult
     suspend fun scan24Ghz(): Result<List<WifiNetwork>>
     suspend fun testAndSaveSta(draft: StaConfigDraft): NetworkActionResult
+    suspend fun activateSavedSta(ssid: String): NetworkActionResult
+    suspend fun forgetSavedSta(ssid: String): NetworkActionResult
     suspend fun disableSta(): NetworkActionResult
     suspend fun saveAp(draft: ApConfigDraft): NetworkActionResult
     suspend fun restoreDefaultAp(): NetworkActionResult
