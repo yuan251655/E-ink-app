@@ -89,6 +89,7 @@ import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
 import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.PlayMode
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
+import com.einkphoto.app.feature.localalbum.model.OrientationPolicy
 import com.einkphoto.app.core.device.DeviceJobState
 import com.einkphoto.app.ui.components.ModeFeatureHeader
 import com.einkphoto.app.ui.components.ModeSwitchStatusCard
@@ -190,7 +191,7 @@ fun AiAlbumHost(
     onSetAiPlaybackStart: () -> Unit = {},
     aiPlayback: PlaybackSettings = PlaybackSettings(PlayMode.Paused, PlayOrder.Sequential, 1800),
     onRefreshAiPlayback: () -> Unit = {},
-    onSaveAiPlayback: (PlayMode, PlayOrder, Int) -> Unit = { _, _, _ -> },
+    onSaveAiPlayback: (PlayMode, PlayOrder, Int, OrientationPolicy) -> Unit = { _, _, _, _ -> },
     aiConfigUiState: AiConfigUiState = AiConfigUiState(),
     onRefreshAiConfig: () -> Unit = {},
     onSaveAiConfig: (String?, String, String, String, String, Boolean) -> Unit = { _, _, _, _, _, _ -> },
@@ -633,8 +634,8 @@ private fun AiModelSwitchScreen(profiles: List<AiModelProfile>, profilesAvailabl
 }
 
 @Composable
-private fun AiPlaybackSettingsScreen(state: PlaybackSettings, onSave: (PlayMode, PlayOrder, Int) -> Unit, onBack: () -> Unit, contentPadding: PaddingValues, modifier: Modifier) {
-    var mode by remember(state.mode) { mutableStateOf(state.mode) }; var order by remember(state.order) { mutableStateOf(state.order) }; var interval by remember(state.intervalSeconds) { mutableStateOf(state.intervalSeconds) }
+private fun AiPlaybackSettingsScreen(state: PlaybackSettings, onSave: (PlayMode, PlayOrder, Int, OrientationPolicy) -> Unit, onBack: () -> Unit, contentPadding: PaddingValues, modifier: Modifier) {
+    var mode by remember(state.mode) { mutableStateOf(state.mode) }; var order by remember(state.order) { mutableStateOf(state.order) }; var interval by remember(state.intervalSeconds) { mutableStateOf(state.intervalSeconds) }; var orientationPolicy by remember(state.orientationPolicy) { mutableStateOf(state.orientationPolicy) }
     Column(modifier.fillMaxSize().padding(contentPadding).padding(horizontal = 16.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "返回 AI 相册") }; Column { Text("AI 轮播设置", style = MaterialTheme.typography.titleLarge); Text("仅播放 AI 相册图片", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
         LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp), contentPadding = PaddingValues(vertical = 16.dp)) {
@@ -642,7 +643,8 @@ private fun AiPlaybackSettingsScreen(state: PlaybackSettings, onSave: (PlayMode,
             item { Text("播放模式", style = MaterialTheme.typography.titleMedium); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(mode == PlayMode.Auto, { mode = PlayMode.Auto }, { Text("自动轮播") }, Modifier.weight(1f)); FilterChip(mode == PlayMode.Paused, { mode = PlayMode.Paused }, { Text("暂停轮播") }, Modifier.weight(1f)) } }
             item { Text("轮播间隔", style = MaterialTheme.typography.titleMedium); Spacer(Modifier.size(6.dp)); listOf(300 to "5 分钟",900 to "15 分钟",1800 to "30 分钟",3600 to "1 小时",10800 to "3 小时",21600 to "6 小时",43200 to "12 小时",86400 to "24 小时").chunked(2).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) { row.forEach { (v,l) -> FilterChip(interval == v, { interval = v }, { Text(l) }, Modifier.weight(1f).heightIn(min = 48.dp)) } }; Spacer(Modifier.size(10.dp)) } }
             item { Text("播放顺序", style = MaterialTheme.typography.titleMedium); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilterChip(order == PlayOrder.Sequential, { order = PlayOrder.Sequential }, { Text("顺序") }); FilterChip(order == PlayOrder.Random, { order = PlayOrder.Random }, { Text("随机") }) } }
-            item { Button(onClick = { onSave(mode, order, interval) }, enabled = state.syncState == PlaybackSyncState.Ready, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { AsyncButtonContent(state.syncState == PlaybackSyncState.Saving, "保存到相册", "正在保存…") }; Text(when (state.syncState) { PlaybackSyncState.Offline -> "相框未连接，无法保存"; PlaybackSyncState.Conflict -> "设备设置已变化，请确认后重新保存"; PlaybackSyncState.Loading -> "正在读取设备设置"; else -> "设置将独立保存到 AI 相册" }, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Text("图片方向", style = MaterialTheme.typography.titleMedium); listOf(OrientationPolicy.All to "全部照片", OrientationPolicy.PreferPortrait to "优先竖屏", OrientationPolicy.PreferLandscape to "优先横屏", OrientationPolicy.PortraitOnly to "只显示竖屏", OrientationPolicy.LandscapeOnly to "只显示横屏").chunked(2).forEach { row -> Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) { row.forEach { (value, label) -> FilterChip(orientationPolicy == value, { orientationPolicy = value }, { Text(label) }, Modifier.weight(1f).heightIn(min = 48.dp)) }; if (row.size == 1) Spacer(Modifier.weight(1f)) }; Spacer(Modifier.size(8.dp)) }; Text("优先模式会先播完一个方向；随机播放一轮内不重复。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Button(onClick = { onSave(mode, order, interval, orientationPolicy) }, enabled = state.syncState == PlaybackSyncState.Ready, modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)) { AsyncButtonContent(state.syncState == PlaybackSyncState.Saving, "保存到相册", "正在保存…") }; Text(when (state.syncState) { PlaybackSyncState.Offline -> "相框未连接，无法保存"; PlaybackSyncState.Conflict -> "设备设置已变化，请确认后重新保存"; PlaybackSyncState.Loading -> "正在读取设备设置"; else -> "设置将独立保存到 AI 相册" }, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
     }
 }

@@ -24,6 +24,7 @@ import com.einkphoto.app.feature.localalbum.model.MediaId
 import com.einkphoto.app.feature.localalbum.model.MediaItem
 import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
+import com.einkphoto.app.feature.localalbum.model.OrientationPolicy
 import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -187,6 +188,7 @@ class LanLocalAlbumReadRepository(
             mode = if (settings.mode == com.einkphoto.app.feature.localalbum.model.PlayMode.Auto) "auto" else "paused",
             intervalSeconds = settings.intervalSeconds,
             order = if (settings.order == PlayOrder.Sequential) "sequential" else "random",
+            orientationPolicy = settings.orientationPolicy.apiValue,
         )) {
             is PlaybackTransportResult.Success -> {
                 applyPlaybackSnapshot(result.snapshot, PlaybackSyncState.Ready)
@@ -222,6 +224,7 @@ class LanLocalAlbumReadRepository(
         mode = if (mode == "auto") com.einkphoto.app.feature.localalbum.model.PlayMode.Auto else com.einkphoto.app.feature.localalbum.model.PlayMode.Paused,
         order = if (order == "sequential") PlayOrder.Sequential else PlayOrder.Random,
         intervalSeconds = intervalSeconds,
+        orientationPolicy = OrientationPolicy.fromApi(orientationPolicy),
         currentMediaId = currentMediaId?.let(::MediaId),
         nextPlayInSeconds = nextPlayInSeconds,
         nextPlayAtEpochMillis = nextPlayAtEpochMillis,

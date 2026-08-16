@@ -159,12 +159,25 @@ enum class PlayOrder {
     Random,
 }
 
+enum class OrientationPolicy(val apiValue: String) {
+    All("all"),
+    PreferPortrait("prefer_portrait"),
+    PreferLandscape("prefer_landscape"),
+    PortraitOnly("portrait_only"),
+    LandscapeOnly("landscape_only");
+
+    companion object {
+        fun fromApi(value: String): OrientationPolicy = entries.firstOrNull { it.apiValue == value } ?: All
+    }
+}
+
 enum class PlaybackSyncState { Loading, Ready, Offline, Conflict, Saving }
 
 data class PlaybackSettings(
     val mode: PlayMode,
     val order: PlayOrder,
     val intervalSeconds: Int,
+    val orientationPolicy: OrientationPolicy = OrientationPolicy.All,
     val currentMediaId: MediaId? = null,
     /** Device-reported countdown. The App converts this to local wall time for display. */
     val nextPlayInSeconds: Long? = null,

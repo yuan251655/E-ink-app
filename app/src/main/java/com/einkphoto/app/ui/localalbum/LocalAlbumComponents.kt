@@ -12,14 +12,17 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.Image
 import androidx.compose.animation.Crossfade
@@ -49,6 +52,7 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -270,48 +274,57 @@ internal fun DeviceAdaptationPreview(
     modifier: Modifier = Modifier,
     deviceAspectRatio: Float = 5f / 3f,
 ) {
-    Box(
+    BoxWithConstraints(
         modifier = modifier
-            .aspectRatio(deviceAspectRatio.coerceIn(0.6f, 2.1f))
+            .aspectRatio((1f / deviceAspectRatio).coerceIn(0.6f, 2.1f))
             .clip(RoundedCornerShape(12.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
-        val previewBitmap = rememberPhonePreviewBitmap(source)
-        if (previewBitmap == null) {
-            DemoArtwork(
-                seed = source.sourceId.hashCode(),
-                description = "${source.displayName} 电子纸构图预览（加载中）",
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            val normalizedTurns = Math.floorMod(quarterTurnsClockwise, 4)
-            val orientedBitmap = remember(previewBitmap, normalizedTurns) {
-                previewBitmap.rotateQuarterTurns(normalizedTurns)
-            }
-            Canvas(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .semantics {
-                        contentDescription = "${source.displayName} 电子纸构图预览，${if (fitMode == FitMode.CropToFill) "填充裁剪，铺满画面" else "完整适配，可能留白"}，旋转 ${quarterTurnsClockwise * 90} 度"
-                    },
-            ) {
-                val image = orientedBitmap.asImageBitmap()
-                val placement = calculatePreviewPlacement(
-                    canvasWidth = size.width,
-                    canvasHeight = size.height,
-                    imageWidth = image.width,
-                    imageHeight = image.height,
-                    fitMode = fitMode,
+        Box(
+            modifier = Modifier
+                .width(maxHeight)
+                .height(maxWidth)
+                .align(Alignment.Center)
+                .graphicsLayer { rotationZ = -90f },
+            contentAlignment = Alignment.Center,
+        ) {
+            val previewBitmap = rememberPhonePreviewBitmap(source)
+            if (previewBitmap == null) {
+                DemoArtwork(
+                    seed = source.sourceId.hashCode(),
+                    description = "${source.displayName} 竖放相框构图预览（加载中）",
+                    modifier = Modifier.fillMaxSize(),
                 )
-                drawImage(
-                    image = image,
-                    srcOffset = IntOffset.Zero,
-                    srcSize = IntSize(image.width, image.height),
-                    dstOffset = IntOffset(placement.offsetX, placement.offsetY),
-                    dstSize = IntSize(placement.width, placement.height),
-                    filterQuality = FilterQuality.High,
-                )
+            } else {
+                val normalizedTurns = Math.floorMod(quarterTurnsClockwise, 4)
+                val orientedBitmap = remember(previewBitmap, normalizedTurns) {
+                    previewBitmap.rotateQuarterTurns(normalizedTurns)
+                }
+                Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .semantics {
+                            contentDescription = "${source.displayName} 竖放相框构图预览，${if (fitMode == FitMode.CropToFill) "填充裁剪，铺满画面" else "完整适配，可能留白"}，旋转 ${quarterTurnsClockwise * 90} 度"
+                        },
+                ) {
+                    val image = orientedBitmap.asImageBitmap()
+                    val placement = calculatePreviewPlacement(
+                        canvasWidth = size.width,
+                        canvasHeight = size.height,
+                        imageWidth = image.width,
+                        imageHeight = image.height,
+                        fitMode = fitMode,
+                    )
+                    drawImage(
+                        image = image,
+                        srcOffset = IntOffset.Zero,
+                        srcSize = IntSize(image.width, image.height),
+                        dstOffset = IntOffset(placement.offsetX, placement.offsetY),
+                        dstSize = IntSize(placement.width, placement.height),
+                        filterQuality = FilterQuality.High,
+                    )
+                }
             }
         }
     }
@@ -346,19 +359,25 @@ internal fun SixColorSimulationPreview(
     }
     Box(
         modifier = modifier
-            .aspectRatio(profile?.let { it.widthPx.toFloat() / it.heightPx } ?: (5f / 3f))
+            .aspectRatio(profile?.let { it.heightPx.toFloat() / it.widthPx } ?: (3f / 5f))
             .clip(RoundedCornerShape(12.dp))
             .background(Color.White),
         contentAlignment = Alignment.Center,
     ) {
         Crossfade(simulation, animationSpec = tween(220), label = "six-color-preview") { bitmap ->
         bitmap?.let {
-            Image(
-                bitmap = it.asImageBitmap(),
-                contentDescription = "${source.displayName} 图片预览",
-                contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
-            )
+            BoxWithConstraints(Modifier.fillMaxSize()) {
+                Image(
+                    bitmap = it.asImageBitmap(),
+                    contentDescription = "${source.displayName} 竖放相框六色预览",
+                    contentScale = ContentScale.Fit,
+                    modifier = Modifier
+                        .width(maxHeight)
+                        .height(maxWidth)
+                        .align(Alignment.Center)
+                        .graphicsLayer { rotationZ = -90f },
+                )
+            }
         } ?: Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(8.dp),

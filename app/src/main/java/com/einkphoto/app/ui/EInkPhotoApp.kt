@@ -33,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -42,8 +43,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.outlined.Mic
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -514,6 +518,7 @@ private fun EInkPhotoAppContent(
     val actionScope = rememberCoroutineScope()
     val powerSnapshot by powerRepository.snapshot.collectAsState()
     var globalWarning by remember { mutableStateOf<String?>(null) }
+    var xiaozhiHeaderStatus by remember { mutableStateOf<XiaozhiHeaderStatus?>(null) }
     var observedCooldownRejectionSequence by remember { mutableStateOf<Long?>(null) }
     var showNetworkConfiguration by rememberSaveable { mutableStateOf(false) }
     var showStorageManagement by rememberSaveable { mutableStateOf(false) }
@@ -589,6 +594,18 @@ private fun EInkPhotoAppContent(
         while (true) {
             delay(10_000L)
             powerRepository.refresh()
+        }
+    }
+    LaunchedEffect(snapshot.connection, easterEggClient) {
+        if (snapshot.connection != DeviceConnectionState.Online) {
+            xiaozhiHeaderStatus = null
+            return@LaunchedEffect
+        }
+        while (true) {
+            easterEggClient.get("/api/v1/xiaozhi/status", fastProbe = true).onSuccess { root ->
+                xiaozhiHeaderStatus = root.optJSONObject("data")?.let(::parseXiaozhiHeaderStatus)
+            }
+            delay(5_000L)
         }
     }
     LaunchedEffect(snapshot.modeSwitchJobId, snapshot.pendingFeature) {
@@ -734,7 +751,7 @@ private fun EInkPhotoAppContent(
                     scrollBehavior = topBarScrollBehavior,
                 )
                 if (!settingsDetailVisible) {
-                    HeaderStatusBar(snapshot, powerSnapshot)
+                    HeaderStatusBar(snapshot, powerSnapshot, xiaozhiHeaderStatus)
                     GlobalTaskCapsule(globalTask) { onDestinationSelected(it.destination) }
                 }
                 }
@@ -1043,7 +1060,11 @@ private fun FloatingGlassNavigation(
 }
 
 @Composable
-private fun HeaderStatusBar(snapshot: com.einkphoto.app.core.device.DeviceSnapshot, power: PowerSnapshot) {
+private fun HeaderStatusBar(
+    snapshot: com.einkphoto.app.core.device.DeviceSnapshot,
+    power: PowerSnapshot,
+    xiaozhiStatus: XiaozhiHeaderStatus?,
+) {
     val sleepLabel = sleepStatusText(snapshot.connection, power)
     val sleepActive = power.automaticSleepEnabled || snapshot.connection == DeviceConnectionState.Sleeping
     Row(
@@ -1080,9 +1101,68 @@ private fun HeaderStatusBar(snapshot: com.einkphoto.app.core.device.DeviceSnapsh
                 modifier = Modifier.padding(horizontal = 9.dp, vertical = 6.dp),
             )
         }
-        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.End,
+        ) {
+            xiaozhiStatus?.let { XiaozhiStatusIcon(it) }
             DeviceConnectionBadge(snapshot)
         }
+    }
+}
+
+@Composable
+private fun XiaozhiStatusIcon(status: XiaozhiHeaderStatus) {
+    var expanded by remember { mutableStateOf(false) }
+    Box {
+        IconButton(
+            onClick = { expanded = true },
+            modifier = Modifier.size(44.dp),
+        ) {
+            Surface(
+                color = if (status.available) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.68f)
+                else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.72f),
+                contentColor = if (status.available) MaterialTheme.colorScheme.primary
+                else MaterialTheme.colorScheme.error,
+                shape = CircleShape,
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.Mic,
+                    contentDescription = status.label,
+                    modifier = Modifier.padding(6.dp).size(17.dp),
+                )
+            }
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            DropdownMenuItem(
+                text = { Text(status.label) },
+                onClick = { expanded = false },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Mic,
+                        contentDescription = null,
+                        tint = if (status.available) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.error,
+                    )
+                },
+            )
+        }
+    }
+}
+
+private data class XiaozhiHeaderStatus(val label: String, val available: Boolean)
+
+private fun parseXiaozhiHeaderStatus(data: JSONObject): XiaozhiHeaderStatus {
+    val state = data.optString("state")
+    val wakeWordEnabled = data.optBoolean("wake_word_enabled")
+    return when {
+        state == "network_unconfigured" -> XiaozhiHeaderStatus("小智不可用 · 未配置网络", false)
+        state == "sta_connecting" -> XiaozhiHeaderStatus("小智不可用 · 网络未连接", false)
+        state == "activation_required" -> XiaozhiHeaderStatus("小智待激活", false)
+        state == "starting" || state == "connecting" -> XiaozhiHeaderStatus("小智连接中", false)
+        wakeWordEnabled -> XiaozhiHeaderStatus("小智可用", true)
+        else -> XiaozhiHeaderStatus("小智暂不可用", false)
     }
 }
 

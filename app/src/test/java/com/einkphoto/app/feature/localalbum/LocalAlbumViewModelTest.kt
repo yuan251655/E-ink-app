@@ -7,6 +7,7 @@ import com.einkphoto.app.core.device.DeviceRejection
 import com.einkphoto.app.core.device.FakeDeviceSession
 import com.einkphoto.app.feature.localalbum.data.FakeLocalAlbumRepository
 import com.einkphoto.app.feature.localalbum.model.AfterDisplay
+import com.einkphoto.app.feature.localalbum.model.PhoneSource
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -70,6 +71,15 @@ class LocalAlbumViewModelTest {
         assertEquals(DeviceRejection.MediaProtected, (protectedResult as DeviceCommandResult.Rejected).reason)
         assertTrue(deletedResult is DeviceCommandResult.Accepted)
         assertTrue(repository.media.value.none { it.id == deletable })
+    }
+
+    @Test
+    fun portraitPhotosDefaultToClockwiseFrameRotation() {
+        val portrait = PhoneSource("portrait", "file:///portrait.jpg", "portrait.jpg", 1200, 1600)
+        val landscape = PhoneSource("landscape", "file:///landscape.jpg", "landscape.jpg", 1600, 1200)
+
+        assertEquals(1, defaultAdaptationFor(portrait).quarterTurnsClockwise)
+        assertEquals(0, defaultAdaptationFor(landscape).quarterTurnsClockwise)
     }
 
     private fun viewModel(

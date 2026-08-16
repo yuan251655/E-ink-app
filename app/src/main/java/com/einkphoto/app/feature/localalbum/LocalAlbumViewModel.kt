@@ -223,9 +223,13 @@ class LocalAlbumViewModel(
 
     /** Replaces the session-scoped selection returned by Android's system Photo Picker. */
     fun setPhoneSources(sources: List<PhoneSource>) {
-        phoneSources.value = sources.distinctBy { it.contentUri }
+        val selected = sources.distinctBy { it.contentUri }
+        val existingSettings = adaptationSettings.value
+        phoneSources.value = selected
         selectedPhoneSourceId.value = phoneSources.value.firstOrNull()?.sourceId
-        adaptationSettings.value = adaptationSettings.value.filterKeys { id -> phoneSources.value.any { it.sourceId == id } }
+        adaptationSettings.value = selected.associate { source ->
+            source.sourceId to (existingSettings[source.sourceId] ?: defaultAdaptationFor(source))
+        }
         conversionDrafts.value = conversionDrafts.value.filterKeys { id -> phoneSources.value.any { it.sourceId == id } }
         message.value = if (sources.isEmpty()) "未选择照片" else "已选择 ${phoneSources.value.size} 张手机照片，尚未上传"
     }
@@ -548,3 +552,8 @@ class LocalAlbumViewModel(
         else -> "保存失败：${reason.name}"
     }
 }
+
+internal fun defaultAdaptationFor(source: PhoneSource) = AdaptationSettings(
+    fitMode = FitMode.CropToFill,
+    quarterTurnsClockwise = if (source.heightPx > source.widthPx) 1 else 0,
+)

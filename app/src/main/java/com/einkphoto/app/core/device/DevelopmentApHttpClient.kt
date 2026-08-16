@@ -667,8 +667,10 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         mode: String,
         intervalSeconds: Int,
         order: String,
+        orientationPolicy: String,
     ): PlaybackTransportResult {
         if (mode !in setOf("auto", "paused") || order !in setOf("sequential", "random") ||
+            orientationPolicy !in setOf("all", "prefer_portrait", "prefer_landscape", "portrait_only", "landscape_only") ||
             intervalSeconds !in setOf(300, 900, 1800, 3600, 10800, 21600, 43200, 86400)
         ) return PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
         return client.postJson(
@@ -678,7 +680,8 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
                 .put("expected_revision", expectedRevision)
                 .put("mode", mode)
                 .put("interval_seconds", intervalSeconds)
-                .put("order", order),
+                .put("order", order)
+                .put("orientation_policy", orientationPolicy),
         ).fold(
             onSuccess = { root -> parsePlayback(root.optJSONObject("data"))?.let(PlaybackTransportResult::Success)
                 ?: PlaybackTransportResult.Failure(DeviceRejection.Unsupported) },
@@ -708,8 +711,10 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
         mode: String,
         intervalSeconds: Int,
         order: String,
+        orientationPolicy: String,
     ): PlaybackTransportResult {
         if (mode !in setOf("auto", "paused") || order !in setOf("sequential", "random") ||
+            orientationPolicy !in setOf("all", "prefer_portrait", "prefer_landscape", "portrait_only", "landscape_only") ||
             intervalSeconds !in setOf(300, 900, 1800, 3600, 10800, 21600, 43200, 86400)
         ) return PlaybackTransportResult.Failure(DeviceRejection.Unsupported)
         return client.postJson(
@@ -719,7 +724,8 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
                 .put("expected_revision", expectedRevision)
                 .put("mode", mode)
                 .put("interval_seconds", intervalSeconds)
-                .put("order", order),
+                .put("order", order)
+                .put("orientation_policy", orientationPolicy),
         ).fold(
             onSuccess = { root -> parsePlayback(root.optJSONObject("data"))?.let(PlaybackTransportResult::Success)
                 ?: PlaybackTransportResult.Failure(DeviceRejection.Unsupported) },
@@ -858,13 +864,14 @@ class HttpLanDeviceTransport(private val client: DevelopmentApHttpClient = Devel
             mode = mode,
             intervalSeconds = interval,
             order = order,
+            orientationPolicy = data.optString("orientation_policy", "all"),
             currentMediaId = data.optString("current_media_id").takeIf { it.isNotBlank() },
             // New firmware reports a countdown because its scheduler clock is monotonic, not
             // Unix time. Never render that monotonic value as a wall-clock timestamp.
             nextPlayInSeconds = data.optLong("next_play_in_seconds", -1L).takeIf { it >= 0L },
             // Old firmware may expose a monotonic next_play_at_ms. Only accept an unambiguous
             // Unix epoch millisecond value; otherwise the UI will say it is waiting to sync.
-            nextPlayAtEpochMillis = data.optLong("next_play_at_ms", -1L)
+            nextPlayAtEpochMillis = data.optLong("next_play_at_epoch_ms", -1L)
                 .takeIf { it >= 1_577_836_800_000L },
             revision = data.optLong("revision", 0L),
             stateRevision = data.optLong("state_revision", 0L),

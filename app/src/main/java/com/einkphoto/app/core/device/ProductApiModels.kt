@@ -98,6 +98,7 @@ data class DevicePlaybackSnapshot(
     val mode: String,
     val intervalSeconds: Int,
     val order: String,
+    val orientationPolicy: String,
     val currentMediaId: String?,
     /** Remaining time supplied by current firmware. This is not an epoch timestamp. */
     val nextPlayInSeconds: Long?,

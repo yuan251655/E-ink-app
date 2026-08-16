@@ -101,6 +101,7 @@ import com.einkphoto.app.feature.localalbum.model.MediaItem
 import com.einkphoto.app.feature.localalbum.model.MediaProtectionReason
 import com.einkphoto.app.feature.localalbum.model.PlayMode
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
+import com.einkphoto.app.feature.localalbum.model.OrientationPolicy
 import com.einkphoto.app.feature.localalbum.model.PlaybackSettings
 import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.DisplayResult
@@ -299,7 +300,7 @@ private fun PlaybackStatusRow(playback: PlaybackSettings) {
     val isAuto = playback.mode == PlayMode.Auto
     val title = if (isAuto) "正在轮播" else "轮播已暂停"
     val detail = if (isAuto) {
-        "${playbackIntervalLabel(playback.intervalSeconds)} · ${if (playback.order == PlayOrder.Sequential) "顺序播放" else "随机播放"}"
+        "${playbackIntervalLabel(playback.intervalSeconds)} · ${if (playback.order == PlayOrder.Sequential) "顺序播放" else "随机播放"} · ${orientationPolicyLabel(playback.orientationPolicy)}"
     } else {
         "保持当前图片，手动切换后仍不会自动播放"
     }
@@ -508,7 +509,7 @@ internal fun ImageAdaptScreen(
         }
         source?.let { selected ->
             item {
-                Text("电子纸构图预览", style = MaterialTheme.typography.titleMedium)
+                Text("竖放相框构图预览", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 DeviceAdaptationPreview(
                     source = selected,
@@ -518,8 +519,13 @@ internal fun ImageAdaptScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "800 × 480 横向画布 · ${if (settings.fitMode == FitMode.CropToFill) "填充裁剪" else "完整适配"} · 旋转 ${settings.quarterTurnsClockwise * 90}°",
+                    "${if (settings.fitMode == FitMode.CropToFill) "填充裁剪" else "完整适配"} · 当前旋转 ${settings.quarterTurnsClockwise * 90}°",
                     style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Text(
+                    "App 已根据照片方向给出默认构图；如方向不合适，可继续手动旋转。",
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
@@ -921,6 +927,7 @@ internal fun MediaDetailScreen(
 internal fun PlaybackSettingsScreen(state: LocalAlbumUiState, viewModel: LocalAlbumViewModel, onBack: () -> Unit) {
     var mode by remember(state.playback.mode) { mutableStateOf(state.playback.mode) }
     var order by remember(state.playback.order) { mutableStateOf(state.playback.order) }
+    var orientationPolicy by remember(state.playback.orientationPolicy) { mutableStateOf(state.playback.orientationPolicy) }
     var intervalSeconds by remember(state.playback.intervalSeconds) { mutableIntStateOf(state.playback.intervalSeconds) }
     val canSave = !state.actionsLocked && state.playback.syncState == PlaybackSyncState.Ready
     Column(Modifier.fillMaxSize()) {
@@ -988,10 +995,44 @@ internal fun PlaybackSettingsScreen(state: LocalAlbumUiState, viewModel: LocalAl
                     modifier = Modifier.heightIn(min = 48.dp),
                 )
             }
+            Text(
+                "随机播放在一轮内不会重复。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        item {
+            Text("图片方向", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            listOf(
+                OrientationPolicy.All to "全部照片",
+                OrientationPolicy.PreferPortrait to "优先竖屏",
+                OrientationPolicy.PreferLandscape to "优先横屏",
+                OrientationPolicy.PortraitOnly to "只显示竖屏",
+                OrientationPolicy.LandscapeOnly to "只显示横屏",
+            ).chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                    row.forEach { (policy, label) ->
+                        FilterChip(
+                            selected = orientationPolicy == policy,
+                            onClick = { orientationPolicy = policy },
+                            label = { Text(label) },
+                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                        )
+                    }
+                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                }
+                Spacer(Modifier.height(8.dp))
+            }
+            Text(
+                "优先模式会先播放完该方向的全部照片，再播放另一方向。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
         item {
             Button(
-                onClick = { viewModel.savePlayback(state.playback.copy(mode = mode, order = order, intervalSeconds = intervalSeconds)) },
+                onClick = { viewModel.savePlayback(state.playback.copy(mode = mode, order = order, intervalSeconds = intervalSeconds, orientationPolicy = orientationPolicy)) },
                 enabled = canSave,
                 modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp),
             ) { Text("保存到设备") }
@@ -1003,7 +1044,7 @@ internal fun PlaybackSettingsScreen(state: LocalAlbumUiState, viewModel: LocalAl
                 PlaybackSyncState.Ready -> StatusRow(
                     Icons.Outlined.CheckCircle,
                     "设备状态",
-                    if (state.playback.mode == PlayMode.Auto) "已开启 · ${playbackIntervalLabel(state.playback.intervalSeconds)} · ${if (state.playback.order == PlayOrder.Sequential) "顺序播放" else "随机播放"}" else "已暂停，保持当前图片",
+                    if (state.playback.mode == PlayMode.Auto) "已开启 · ${playbackIntervalLabel(state.playback.intervalSeconds)} · ${if (state.playback.order == PlayOrder.Sequential) "顺序播放" else "随机播放"} · ${orientationPolicyLabel(state.playback.orientationPolicy)}" else "已暂停，保持当前图片",
                 )
             }
             state.userMessage?.let { message ->
@@ -1019,6 +1060,14 @@ private fun playbackIntervalLabel(seconds: Int): String = when (seconds) {
     300 -> "每 5 分钟"; 900 -> "每 15 分钟"; 1800 -> "每 30 分钟"; 3600 -> "每 1 小时"
     10800 -> "每 3 小时"; 21600 -> "每 6 小时"; 43200 -> "每 12 小时"; 86400 -> "每 24 小时"
     else -> "间隔未知"
+}
+
+private fun orientationPolicyLabel(policy: OrientationPolicy): String = when (policy) {
+    OrientationPolicy.All -> "全部照片"
+    OrientationPolicy.PreferPortrait -> "优先竖屏"
+    OrientationPolicy.PreferLandscape -> "优先横屏"
+    OrientationPolicy.PortraitOnly -> "只显示竖屏"
+    OrientationPolicy.LandscapeOnly -> "只显示横屏"
 }
 
 @Composable
