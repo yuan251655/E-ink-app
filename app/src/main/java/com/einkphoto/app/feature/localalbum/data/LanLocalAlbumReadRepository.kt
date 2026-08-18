@@ -22,6 +22,7 @@ import com.einkphoto.app.feature.localalbum.model.MediaAvailability
 import com.einkphoto.app.feature.localalbum.model.MediaCategory
 import com.einkphoto.app.feature.localalbum.model.MediaId
 import com.einkphoto.app.feature.localalbum.model.MediaItem
+import com.einkphoto.app.feature.localalbum.model.MediaOrientation
 import com.einkphoto.app.feature.localalbum.model.PlaybackSyncState
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
 import com.einkphoto.app.feature.localalbum.model.OrientationPolicy
@@ -376,6 +377,7 @@ class LanLocalAlbumReadRepository(
         availability = MediaAvailability.Ready,
         createdAtEpochMillis = createdAtEpochMillis,
         revision = revision,
+        orientation = if (displayProfile.orientation == "portrait") MediaOrientation.Portrait else MediaOrientation.Landscape,
     )
 
     private companion object {

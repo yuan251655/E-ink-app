@@ -555,5 +555,5 @@ class LocalAlbumViewModel(
 
 internal fun defaultAdaptationFor(source: PhoneSource) = AdaptationSettings(
     fitMode = FitMode.CropToFill,
-    quarterTurnsClockwise = if (source.heightPx > source.widthPx) 1 else 0,
+    quarterTurnsClockwise = 0,
 )

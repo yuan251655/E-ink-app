@@ -276,17 +276,18 @@ internal fun DeviceAdaptationPreview(
 ) {
     BoxWithConstraints(
         modifier = modifier
-            .aspectRatio((1f / deviceAspectRatio).coerceIn(0.6f, 2.1f))
+            .aspectRatio(deviceAspectRatio.coerceIn(0.8f, 2.1f))
             .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .background(Color(0xFFB97845)),
         contentAlignment = Alignment.Center,
     ) {
         Box(
             modifier = Modifier
-                .width(maxHeight)
-                .height(maxWidth)
-                .align(Alignment.Center)
-                .graphicsLayer { rotationZ = -90f },
+                .fillMaxSize()
+                .padding(10.dp)
+                .clip(RoundedCornerShape(5.dp))
+                .background(Color.White)
+                .align(Alignment.Center),
             contentAlignment = Alignment.Center,
         ) {
             val previewBitmap = rememberPhonePreviewBitmap(source)
@@ -359,9 +360,9 @@ internal fun SixColorSimulationPreview(
     }
     Box(
         modifier = modifier
-            .aspectRatio(profile?.let { it.heightPx.toFloat() / it.widthPx } ?: (3f / 5f))
+            .aspectRatio(profile?.let { it.widthPx.toFloat() / it.heightPx } ?: (5f / 3f))
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White),
+            .background(Color(0xFFB97845)),
         contentAlignment = Alignment.Center,
     ) {
         Crossfade(simulation, animationSpec = tween(220), label = "six-color-preview") { bitmap ->
@@ -372,10 +373,10 @@ internal fun SixColorSimulationPreview(
                     contentDescription = "${source.displayName} 竖放相框六色预览",
                     contentScale = ContentScale.Fit,
                     modifier = Modifier
-                        .width(maxHeight)
-                        .height(maxWidth)
-                        .align(Alignment.Center)
-                        .graphicsLayer { rotationZ = -90f },
+                        .fillMaxSize()
+                        .padding(10.dp)
+                        .clip(RoundedCornerShape(5.dp))
+                        .align(Alignment.Center),
                 )
             }
         } ?: Column(

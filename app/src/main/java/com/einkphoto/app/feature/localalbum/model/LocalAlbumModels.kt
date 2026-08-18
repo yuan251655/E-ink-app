@@ -102,6 +102,11 @@ enum class MediaAvailability {
     Invalid,
 }
 
+enum class MediaOrientation {
+    Landscape,
+    Portrait,
+}
+
 enum class MediaProtectionReason {
     CurrentDisplay,
     OnlyFallback,
@@ -123,6 +128,7 @@ data class MediaItem(
     val createdAtEpochMillis: Long,
     /** Device-issued optimistic-concurrency token; it is never a file-system revision. */
     val revision: Long = 0L,
+    val orientation: MediaOrientation = MediaOrientation.Landscape,
 ) {
     init {
         require(displayName.isNotBlank())

@@ -98,6 +98,7 @@ import com.einkphoto.app.feature.localalbum.model.AfterDisplay
 import com.einkphoto.app.feature.localalbum.model.LocalAlbumUiState
 import com.einkphoto.app.feature.localalbum.model.MediaId
 import com.einkphoto.app.feature.localalbum.model.MediaItem
+import com.einkphoto.app.feature.localalbum.model.MediaOrientation
 import com.einkphoto.app.feature.localalbum.model.MediaProtectionReason
 import com.einkphoto.app.feature.localalbum.model.PlayMode
 import com.einkphoto.app.feature.localalbum.model.PlayOrder
@@ -377,9 +378,22 @@ private fun formatPlaybackTime(epochMillis: Long): String =
 
 @Composable
 internal fun DeviceLibraryScreen(state: LocalAlbumUiState, onBack: () -> Unit, onBatch: () -> Unit, onMedia: (MediaId) -> Unit) {
+    var orientationFilter by remember { mutableStateOf("all") }
+    val filteredMedia = remember(state.media, orientationFilter) {
+        state.media.filter { media -> when (orientationFilter) {
+            "landscape" -> media.orientation == MediaOrientation.Landscape
+            "portrait" -> media.orientation == MediaOrientation.Portrait
+            else -> true
+        } }
+    }
     Column(Modifier.fillMaxSize()) {
         SubpageHeader("设备中的图片", "已保存到 TF 卡的本地照片", onBack, "选择", onBatch, actionEnabled = !state.actionsLocked)
         Box(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) { LibrarySummaryPanel(state) }
+        Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf("all" to "全部", "landscape" to "横屏", "portrait" to "竖屏").forEach { (key, label) ->
+                FilterChip(selected = orientationFilter == key, onClick = { orientationFilter = key }, label = { Text(label) }, modifier = Modifier.heightIn(min = 44.dp))
+            }
+        }
         LazyVerticalGrid(
             columns = GridCells.Adaptive(156.dp),
             modifier = Modifier.fillMaxSize(),
@@ -387,7 +401,7 @@ internal fun DeviceLibraryScreen(state: LocalAlbumUiState, onBack: () -> Unit, o
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            items(state.media, key = { it.id.value }) { media ->
+            items(filteredMedia, key = { it.id.value }) { media ->
                 MediaCard(media, media.id == state.currentDisplay.mediaId, { onMedia(media.id) }, enabled = !state.actionsLocked)
             }
         }

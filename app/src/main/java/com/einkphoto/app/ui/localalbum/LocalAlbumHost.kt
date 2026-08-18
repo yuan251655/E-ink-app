@@ -1,6 +1,9 @@
 package com.einkphoto.app.ui.localalbum
 
 import android.content.Context
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
@@ -19,9 +22,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
@@ -30,6 +35,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.core.content.ContextCompat
 import com.einkphoto.app.core.device.DeviceCommandResult
 import com.einkphoto.app.core.device.DeviceSession
 import com.einkphoto.app.core.device.DeviceFeature
@@ -77,6 +83,7 @@ fun LocalAlbumHost(
     val navigate: (LocalAlbumRoute) -> Unit = { destination -> backStack.add(destination) }
     val back: () -> Unit = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) }
     val backToOverview: () -> Unit = { backStack.clear(); backStack.add(LocalAlbumRoute.Overview) }
+    var showAlbumPicker by rememberSaveable { mutableStateOf(false) }
     val photoPicker = rememberLauncherForActivityResult(
         // Keep Android's photo/albums UI, but do not pass the old app-side limit of five.
         // The system picker applies the platform maximum when no custom limit is supplied.
@@ -89,6 +96,20 @@ fun LocalAlbumHost(
             viewModel.setPhoneSources(imported)
         }
     }
+    val mediaPermission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_IMAGES else Manifest.permission.READ_EXTERNAL_STORAGE
+    val mediaPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) showAlbumPicker = true
+        else photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+    }
+    val openAlbumPicker = {
+        if (ContextCompat.checkSelfPermission(context, mediaPermission) == PackageManager.PERMISSION_GRANTED) {
+            showAlbumPicker = true
+        } else {
+            mediaPermissionLauncher.launch(mediaPermission)
+        }
+    }
 
     LaunchedEffect(Unit) { viewModel.refresh() }
     LaunchedEffect(route) {
@@ -98,7 +119,19 @@ fun LocalAlbumHost(
     BackHandler(enabled = backStack.size > 1, onBack = back)
 
     Box(modifier.fillMaxSize().padding(contentPadding)) {
-        AnimatedContent(
+        if (showAlbumPicker) {
+            PhoneAlbumPickerScreen(
+                context = context,
+                onBack = { showAlbumPicker = false },
+                onConfirm = { uris ->
+                    showAlbumPicker = false
+                    scope.launch {
+                        val imported = withContext(Dispatchers.IO) { uris.mapNotNull { uri -> context.toPhoneSource(uri) } }
+                        viewModel.setPhoneSources(imported)
+                    }
+                },
+            )
+        } else AnimatedContent(
             targetState = LocalAlbumAnimatedPage(route, backStack.size),
             transitionSpec = { hierarchicalPageTransition(targetState.depth > initialState.depth) },
             label = "local-album-page",
@@ -124,9 +157,7 @@ fun LocalAlbumHost(
                 adaptations = state.adaptationSettings,
                 drafts = state.conversionDrafts,
                 onBack = backToOverview,
-                onPickPhotos = {
-                    photoPicker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-                },
+                onPickPhotos = openAlbumPicker,
                 onRemoveSource = viewModel::removePhoneSource,
                 onSelectSource = viewModel::selectPhoneSource,
                 onNext = {
