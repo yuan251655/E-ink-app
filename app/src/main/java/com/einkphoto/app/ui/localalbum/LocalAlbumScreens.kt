@@ -30,7 +30,6 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
-import androidx.compose.material.icons.automirrored.outlined.RotateRight
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.CheckCircle
@@ -182,7 +181,7 @@ internal fun LocalAlbumOverviewScreen(
                     } else currentMedia?.let { media ->
                         // In real mode this is the source image streamed from the device and
                         // associated with its authoritative current_media_id, never a phone draft.
-                        SavedMediaPreview(media, Modifier.fillMaxWidth())
+                        FramedSavedMediaPreview(media, Modifier.fillMaxWidth())
                     } ?: if (!ownsCurrentContent) {
                         OutlinedCard(modifier = Modifier.fillMaxWidth().aspectRatio(5f / 3f)) {
                             Box(Modifier.fillMaxSize().padding(20.dp), contentAlignment = Alignment.Center) {
@@ -500,9 +499,10 @@ internal fun ImageAdaptScreen(
     settings: AdaptationSettings,
     onBack: () -> Unit,
     onFitModeChange: (FitMode) -> Unit,
-    onRotate: () -> Unit,
+    onTargetOrientationChange: (Boolean) -> Unit,
     onNext: () -> Unit,
 ) {
+    val targetLandscape = source?.isLandscapeAfterTurns(settings.quarterTurnsClockwise) ?: true
     ScreenList("图片适配", "第 2 步，共 3 步", onBack) {
         item {
             Text("原图预览", style = MaterialTheme.typography.titleMedium)
@@ -523,7 +523,7 @@ internal fun ImageAdaptScreen(
         }
         source?.let { selected ->
             item {
-                Text("竖放相框构图预览", style = MaterialTheme.typography.titleMedium)
+                Text("相框构图预览", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 DeviceAdaptationPreview(
                     source = selected,
@@ -533,12 +533,12 @@ internal fun ImageAdaptScreen(
                 )
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "${if (settings.fitMode == FitMode.CropToFill) "填充裁剪" else "完整适配"} · 当前旋转 ${settings.quarterTurnsClockwise * 90}°",
+                    "${if (settings.fitMode == FitMode.CropToFill) "填充裁剪" else "完整适配"} · 当前${if (targetLandscape) "横屏" else "竖屏"}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Text(
-                    "App 已根据照片方向给出默认构图；如方向不合适，可继续手动旋转。",
+                    "如方向不合适，可在下方切换横屏或竖屏。",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -555,22 +555,31 @@ internal fun ImageAdaptScreen(
         }
         item {
             Text("适配方式", style = MaterialTheme.typography.titleMedium)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf(FitMode.CropToFill, FitMode.FitInside).forEach { mode ->
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(FitMode.CropToFill, FitMode.FitInside).forEach { mode ->
+                        FilterChip(
+                            selected = settings.fitMode == mode,
+                            onClick = { onFitModeChange(mode) },
+                            label = { Text(if (mode == FitMode.CropToFill) "填充裁剪" else "完整适配") },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(
-                        selected = settings.fitMode == mode,
-                        onClick = { onFitModeChange(mode) },
-                        label = { Text(if (mode == FitMode.CropToFill) "填充裁剪" else "完整适配") },
+                        selected = targetLandscape,
+                        onClick = { onTargetOrientationChange(true) },
+                        label = { Text("横屏") },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    )
+                    FilterChip(
+                        selected = !targetLandscape,
+                        onClick = { onTargetOrientationChange(false) },
+                        label = { Text("竖屏") },
                         modifier = Modifier.heightIn(min = 48.dp),
                     )
                 }
-                FilterChip(
-                    selected = false,
-                    onClick = onRotate,
-                    label = { Text("旋转 ${settings.quarterTurnsClockwise * 90}°") },
-                    leadingIcon = { Icon(Icons.AutoMirrored.Outlined.RotateRight, contentDescription = null, Modifier.size(18.dp)) },
-                    modifier = Modifier.heightIn(min = 48.dp),
-                )
             }
         }
         item {
@@ -636,7 +645,7 @@ internal fun SixColorPreviewScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Text(
-                                "${if (settings.fitMode == FitMode.CropToFill) "填充裁剪" else "完整适配"} · 旋转 ${settings.quarterTurnsClockwise * 90}°",
+                                "${if (settings.fitMode == FitMode.CropToFill) "填充裁剪" else "完整适配"} · ${if (selected.isLandscapeAfterTurns(settings.quarterTurnsClockwise)) "横屏" else "竖屏"}",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
@@ -825,6 +834,8 @@ internal fun MediaDetailScreen(
     state: LocalAlbumUiState,
     media: MediaItem,
     onBack: () -> Unit,
+    onAdjustPreviewRotation: (Int) -> Unit,
+    onResetPreviewRotation: () -> Unit,
     onDisplay: (AfterDisplay) -> Unit,
     onDelete: () -> Unit,
 ) {
@@ -850,7 +861,23 @@ internal fun MediaDetailScreen(
         )
     }
     ScreenList(media.displayName, "设备媒体详情", onBack) {
-        item { SavedMediaPreview(media, Modifier.fillMaxWidth()) }
+        item { FramedSavedMediaPreview(media, Modifier.fillMaxWidth()) }
+        item {
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("预览方向校正", style = MaterialTheme.typography.titleMedium)
+                    Text("仅影响 App 中的预览与相框方向，不修改设备图片。", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onAdjustPreviewRotation(90) }, modifier = Modifier.weight(1f)) { Text("逆时针 90°") }
+                        OutlinedButton(onClick = { onAdjustPreviewRotation(180) }, modifier = Modifier.weight(1f)) { Text("旋转 180°") }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { onAdjustPreviewRotation(-90) }, modifier = Modifier.weight(1f)) { Text("顺时针 90°") }
+                        TextButton(onClick = onResetPreviewRotation, modifier = Modifier.weight(1f)) { Text("恢复默认") }
+                    }
+                }
+            }
+        }
         item {
             Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {

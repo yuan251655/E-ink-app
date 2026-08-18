@@ -48,6 +48,7 @@ suspend fun createLocalDraft(
     }
 
     onStage(ConversionStage.Preparing)
+    val targetLandscape = request.source.isLandscapeAfterTurns(request.settings.quarterTurnsClockwise)
     val composed = renderDeviceComposition(context, request.source, request.settings, profile)
     try {
         onStage(ConversionStage.Quantizing)
@@ -62,8 +63,17 @@ suspend fun createLocalDraft(
         val binFile = File(draftDir, "image.bin")
         val metadataFile = File(draftDir, "draft.json")
         atomicWrite(previewFile) { output ->
-            require(conversion.previewBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
-                "六色预览写入失败"
+            val previewBitmap = if (targetLandscape) {
+                conversion.previewBitmap
+            } else {
+                conversion.previewBitmap.rotateQuarterTurns(3)
+            }
+            try {
+                require(previewBitmap.compress(Bitmap.CompressFormat.PNG, 100, output)) {
+                    "六色预览写入失败"
+                }
+            } finally {
+                if (previewBitmap !== conversion.previewBitmap && !previewBitmap.isRecycled) previewBitmap.recycle()
             }
         }
         atomicWrite(binFile) { it.write(conversion.candidateBin) }
@@ -108,28 +118,47 @@ suspend fun renderDeviceComposition(
     val exifOrientation = context.readExifOrientation(uri)
     val exifCorrected = sourceBitmap.applyExifOrientation(exifOrientation)
     val oriented = exifCorrected.rotateQuarterTurns(settings.quarterTurnsClockwise)
-    val output = Bitmap.createBitmap(profile.widthPx, profile.heightPx, Bitmap.Config.ARGB_8888)
-    Canvas(output).apply {
-        drawColor(Color.WHITE)
-        val scale = when (settings.fitMode) {
-            FitMode.CropToFill -> maxOf(profile.widthPx.toFloat() / oriented.width, profile.heightPx.toFloat() / oriented.height)
-            FitMode.FitInside -> minOf(profile.widthPx.toFloat() / oriented.width, profile.heightPx.toFloat() / oriented.height)
+    val targetLandscape = source.isLandscapeAfterTurns(settings.quarterTurnsClockwise)
+    val userWidth = if (targetLandscape) profile.widthPx else profile.heightPx
+    val userHeight = if (targetLandscape) profile.heightPx else profile.widthPx
+    val userOutput = Bitmap.createBitmap(userWidth, userHeight, Bitmap.Config.ARGB_8888)
+    drawComposedBitmap(userOutput, oriented, settings.fitMode)
+    val output = if (targetLandscape) {
+        userOutput
+    } else {
+        userOutput.rotateQuarterTurns(1).also {
+            if (!userOutput.isRecycled) userOutput.recycle()
         }
-        val targetWidth = (oriented.width * scale).roundToInt().coerceAtLeast(1)
-        val targetHeight = (oriented.height * scale).roundToInt().coerceAtLeast(1)
-        val left = (profile.widthPx - targetWidth) / 2f
-        val top = (profile.heightPx - targetHeight) / 2f
-        drawBitmap(
-            oriented,
-            null,
-            android.graphics.RectF(left, top, left + targetWidth, top + targetHeight),
-            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
-        )
     }
     if (oriented !== sourceBitmap && !oriented.isRecycled) oriented.recycle()
     if (exifCorrected !== sourceBitmap && exifCorrected !== oriented && !exifCorrected.isRecycled) exifCorrected.recycle()
     if (!sourceBitmap.isRecycled) sourceBitmap.recycle()
     output
+}
+
+private fun PhoneSource.isLandscapeAfterTurns(quarterTurnsClockwise: Int): Boolean {
+    val startsLandscape = widthPx >= heightPx
+    return if (Math.floorMod(quarterTurnsClockwise, 2) == 0) startsLandscape else !startsLandscape
+}
+
+private fun drawComposedBitmap(output: Bitmap, source: Bitmap, fitMode: FitMode) {
+    Canvas(output).apply {
+        drawColor(Color.WHITE)
+        val scale = when (fitMode) {
+            FitMode.CropToFill -> maxOf(output.width.toFloat() / source.width, output.height.toFloat() / source.height)
+            FitMode.FitInside -> minOf(output.width.toFloat() / source.width, output.height.toFloat() / source.height)
+        }
+        val targetWidth = (source.width * scale).roundToInt().coerceAtLeast(1)
+        val targetHeight = (source.height * scale).roundToInt().coerceAtLeast(1)
+        val left = (output.width - targetWidth) / 2f
+        val top = (output.height - targetHeight) / 2f
+        drawBitmap(
+            source,
+            null,
+            android.graphics.RectF(left, top, left + targetWidth, top + targetHeight),
+            Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG),
+        )
+    }
 }
 
 private fun Context.decodeSampledBitmap(uri: Uri, maxDimension: Int = 2048): Bitmap? {

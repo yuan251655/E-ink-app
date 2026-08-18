@@ -46,6 +46,7 @@ import com.einkphoto.app.feature.localalbum.data.LocalAlbumDemoDependencies
 import com.einkphoto.app.feature.localalbum.data.LocalDraftRequest
 import com.einkphoto.app.feature.localalbum.data.createLocalDraft
 import com.einkphoto.app.feature.localalbum.model.AfterDisplay
+import com.einkphoto.app.feature.localalbum.model.MediaItem
 import com.einkphoto.app.feature.localalbum.model.PhoneSource
 import com.einkphoto.app.ui.components.hierarchicalPageTransition
 import com.einkphoto.app.ui.theme.EInkPhotoTheme
@@ -75,6 +76,14 @@ fun LocalAlbumHost(
 ) {
     val state by viewModel.uiState.collectAsState()
     val context = LocalContext.current
+    var previewRotationOverrides by remember(context) { mutableStateOf(context.readPreviewRotationOverrides()) }
+    val previewState = state.copy(
+        media = state.media.map { media ->
+            previewRotationOverrides[media.id.value]?.let { adjustment ->
+                media.copy(rotationDegrees = normalizeRotationDegrees(media.rotationDegrees + adjustment))
+            } ?: media
+        },
+    )
     val scope = rememberCoroutineScope()
     val backStack = rememberSaveable(saver = localAlbumBackStackSaver) {
         mutableStateListOf<LocalAlbumRoute>(LocalAlbumRoute.Overview)
@@ -138,7 +147,7 @@ fun LocalAlbumHost(
         ) { page ->
             when (page.route) {
             LocalAlbumRoute.Overview -> LocalAlbumOverviewScreen(
-                state = state,
+                state = previewState,
                 viewModel = viewModel,
                 onOpenLibrary = { navigate(LocalAlbumRoute.Library) },
                 onImport = { navigate(LocalAlbumRoute.Import) },
@@ -148,7 +157,7 @@ fun LocalAlbumHost(
                 modeSwitchState = modeSwitchState,
                 onSwitchMode = onSwitchMode,
             )
-            LocalAlbumRoute.Library -> DeviceLibraryScreen(state, back, { navigate(LocalAlbumRoute.Batch) }) {
+            LocalAlbumRoute.Library -> DeviceLibraryScreen(previewState, back, { navigate(LocalAlbumRoute.Batch) }) {
                 navigate(LocalAlbumRoute.Detail(it))
             }
             LocalAlbumRoute.Import -> PhoneImportScreen(
@@ -179,11 +188,11 @@ fun LocalAlbumHost(
                 onFitModeChange = { fitMode ->
                     state.selectedPhoneSource?.let { viewModel.updateAdaptation(it.sourceId, fitMode = fitMode) }
                 },
-                onRotate = {
+                onTargetOrientationChange = { targetLandscape ->
                     state.selectedPhoneSource?.let { source ->
                         viewModel.updateAdaptation(
                             source.sourceId,
-                            quarterTurnsClockwise = (state.selectedAdaptation.quarterTurnsClockwise + 1) % 4,
+                            quarterTurnsClockwise = quarterTurnsForTargetOrientation(source, targetLandscape),
                         )
                     }
                 },
@@ -257,11 +266,25 @@ fun LocalAlbumHost(
                 // a child route, so leaving it as the root would make its back arrow a no-op.
                 onDone = backToOverview,
             )
-            is LocalAlbumRoute.Detail -> state.media.firstOrNull { it.id == page.route.mediaId }?.let { media ->
+            is LocalAlbumRoute.Detail -> previewState.media.firstOrNull { it.id == page.route.mediaId }?.let { media ->
                 MediaDetailScreen(
-                    state = state,
+                    state = previewState,
                     media = media,
                     onBack = back,
+                    onAdjustPreviewRotation = { deltaDegrees ->
+                        val current = previewRotationOverrides[media.id.value] ?: 0
+                        val updated = normalizeRotationDegrees(current + deltaDegrees)
+                        previewRotationOverrides = if (updated == 0) {
+                            previewRotationOverrides - media.id.value
+                        } else {
+                            previewRotationOverrides + (media.id.value to updated)
+                        }
+                        context.writePreviewRotationOverrides(previewRotationOverrides)
+                    },
+                    onResetPreviewRotation = {
+                        previewRotationOverrides = previewRotationOverrides - media.id.value
+                        context.writePreviewRotationOverrides(previewRotationOverrides)
+                    },
                     onDisplay = { afterDisplay ->
                         // Keep the user on the media detail page. It owns the real preview and
                         // observes the device job state inline rather than opening a second,
@@ -276,11 +299,34 @@ fun LocalAlbumHost(
                 )
             }
             LocalAlbumRoute.Playback -> PlaybackSettingsScreen(state, viewModel, back)
-            LocalAlbumRoute.Batch -> BatchManageScreen(state, viewModel, back)
+            LocalAlbumRoute.Batch -> BatchManageScreen(previewState, viewModel, back)
             }
         }
     }
 }
+
+private const val previewRotationPreferenceName = "local_album_preview_rotation"
+private const val previewRotationPreferencePrefix = "media_"
+
+private fun Context.readPreviewRotationOverrides(): Map<String, Int> =
+    getSharedPreferences(previewRotationPreferenceName, Context.MODE_PRIVATE).all
+        .mapNotNull { (key, value) ->
+            key.removePrefix(previewRotationPreferencePrefix)
+                .takeIf { key.startsWith(previewRotationPreferencePrefix) && it.isNotBlank() }
+                ?.let { mediaId -> (value as? Int)?.let { mediaId to normalizeRotationDegrees(it) } }
+        }
+        .toMap()
+
+private fun Context.writePreviewRotationOverrides(overrides: Map<String, Int>) {
+    val preferences = getSharedPreferences(previewRotationPreferenceName, Context.MODE_PRIVATE)
+    preferences.edit().clear().apply {
+        overrides.forEach { (mediaId, rotationDegrees) ->
+            putInt("$previewRotationPreferencePrefix$mediaId", normalizeRotationDegrees(rotationDegrees))
+        }
+    }.apply()
+}
+
+private fun normalizeRotationDegrees(value: Int): Int = Math.floorMod(value, 360)
 
 private fun Context.toPhoneSource(uri: Uri): PhoneSource? = runCatching {
     val displayName = contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
@@ -359,6 +405,11 @@ private suspend fun processLocalDraft(
         }
         viewModel.failConversion(request.source.sourceId, message)
     }
+}
+
+private fun quarterTurnsForTargetOrientation(source: PhoneSource, targetLandscape: Boolean): Int {
+    val sourceLandscape = source.widthPx >= source.heightPx
+    return if (sourceLandscape == targetLandscape) 0 else 1
 }
 
 @Composable

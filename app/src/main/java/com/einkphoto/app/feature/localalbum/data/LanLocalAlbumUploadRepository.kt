@@ -61,10 +61,10 @@ class LanLocalAlbumUploadRepository(
                 frameBytes = draft.profile.frameBytes,
                 pixelFormat = "4bpp",
                 palette = "six_color_e6",
-                // Preserve the source orientation after the user's explicit rotation.
-                // The fixed 800x480 output size alone cannot describe this intent.
-                orientation = if (sourceEndsLandscape) "landscape" else "portrait",
-                rotationDegrees = draft.quarterTurnsClockwise * 90,
+                // The BIN is stored in the fixed landscape panel coordinates. The
+                // rotation metadata tells the App/ESP how to present it to the user.
+                orientation = "landscape",
+                rotationDegrees = if (sourceEndsLandscape) 0 else 90,
                 fitMode = if (draft.fitMode.name == "CropToFill") "cover" else "contain",
                 converterVersion = draft.algorithmVersion,
             ),

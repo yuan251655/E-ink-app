@@ -129,12 +129,14 @@ data class MediaItem(
     /** Device-issued optimistic-concurrency token; it is never a file-system revision. */
     val revision: Long = 0L,
     val orientation: MediaOrientation = MediaOrientation.Landscape,
+    val rotationDegrees: Int = 0,
 ) {
     init {
         require(displayName.isNotBlank())
         require(sourceWidthPx > 0 && sourceHeightPx > 0)
         require(sizeBytes >= 0)
         require(revision >= 0)
+        require(rotationDegrees % 90 == 0)
     }
 
     val canDelete: Boolean get() = availability == MediaAvailability.Ready && protectionReasons.isEmpty()

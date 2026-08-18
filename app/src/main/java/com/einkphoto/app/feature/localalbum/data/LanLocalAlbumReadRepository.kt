@@ -378,6 +378,7 @@ class LanLocalAlbumReadRepository(
         createdAtEpochMillis = createdAtEpochMillis,
         revision = revision,
         orientation = userVisibleMediaOrientation(displayProfile.orientation, displayProfile.rotationDegrees),
+        rotationDegrees = displayProfile.rotationDegrees,
     )
 
     private companion object {
