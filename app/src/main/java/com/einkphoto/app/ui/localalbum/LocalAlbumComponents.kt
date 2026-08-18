@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -52,20 +53,22 @@ import androidx.compose.ui.graphics.FilterQuality
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import com.einkphoto.app.R
 import com.einkphoto.app.core.device.DeviceConnectionState
 import com.einkphoto.app.core.device.DisplayProfile
 import com.einkphoto.app.core.device.DeviceFeature
 import com.einkphoto.app.core.device.DevicePreviewBitmapStore
 import com.einkphoto.app.core.device.DeviceSnapshot
 import com.einkphoto.app.feature.localalbum.model.MediaItem
+import com.einkphoto.app.feature.localalbum.model.MediaOrientation
 import com.einkphoto.app.feature.localalbum.model.MediaProtectionReason
 import com.einkphoto.app.feature.localalbum.model.PhoneSource
 import com.einkphoto.app.feature.localalbum.model.FitMode
@@ -274,27 +277,13 @@ internal fun DeviceAdaptationPreview(
     modifier: Modifier = Modifier,
     deviceAspectRatio: Float = 5f / 3f,
 ) {
-    BoxWithConstraints(
-        modifier = modifier
-            .aspectRatio(deviceAspectRatio.coerceIn(0.8f, 2.1f))
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFFB97845)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(10.dp)
-                .clip(RoundedCornerShape(5.dp))
-                .background(Color.White)
-                .align(Alignment.Center),
-            contentAlignment = Alignment.Center,
-        ) {
+    WoodenFramePreview(modifier = modifier, contentDescription = "${source.displayName} 相框构图预览") {
+        Box(Modifier.fillMaxSize().background(Color.White), contentAlignment = Alignment.Center) {
             val previewBitmap = rememberPhonePreviewBitmap(source)
             if (previewBitmap == null) {
                 DemoArtwork(
                     seed = source.sourceId.hashCode(),
-                    description = "${source.displayName} 竖放相框构图预览（加载中）",
+                    description = "${source.displayName} 相框构图预览（加载中）",
                     modifier = Modifier.fillMaxSize(),
                 )
             } else {
@@ -306,7 +295,7 @@ internal fun DeviceAdaptationPreview(
                     modifier = Modifier
                         .fillMaxSize()
                         .semantics {
-                            contentDescription = "${source.displayName} 竖放相框构图预览，${if (fitMode == FitMode.CropToFill) "填充裁剪，铺满画面" else "完整适配，可能留白"}，旋转 ${quarterTurnsClockwise * 90} 度"
+                            contentDescription = "${source.displayName} 相框构图预览，${if (fitMode == FitMode.CropToFill) "填充裁剪，铺满画面" else "完整适配，可能留白"}，旋转 ${quarterTurnsClockwise * 90} 度"
                         },
                 ) {
                     val image = orientedBitmap.asImageBitmap()
@@ -358,30 +347,21 @@ internal fun SixColorSimulationPreview(
             }.getOrNull()
         }
     }
-    Box(
-        modifier = modifier
-            .aspectRatio(profile?.let { it.widthPx.toFloat() / it.heightPx } ?: (5f / 3f))
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color(0xFFB97845)),
-        contentAlignment = Alignment.Center,
-    ) {
+    WoodenFramePreview(modifier = modifier, contentDescription = "${source.displayName} 相框六色预览") {
         Crossfade(simulation, animationSpec = tween(220), label = "six-color-preview") { bitmap ->
         bitmap?.let {
-            BoxWithConstraints(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().background(Color.White), contentAlignment = Alignment.Center) {
                 Image(
                     bitmap = it.asImageBitmap(),
-                    contentDescription = "${source.displayName} 竖放相框六色预览",
+                    contentDescription = "${source.displayName} 相框六色预览",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(10.dp)
-                        .clip(RoundedCornerShape(5.dp))
-                        .align(Alignment.Center),
+                    modifier = Modifier.fillMaxSize(),
                 )
             }
         } ?: Column(
+            modifier = Modifier.fillMaxSize().background(Color.White),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.Center,
         ) {
             Icon(Icons.Outlined.Science, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
             Text("正在生成手机六色模拟效果", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -428,6 +408,36 @@ private fun Bitmap.rotateQuarterTurns(turns: Int): Bitmap {
 }
 
 @Composable
+private fun WoodenFramePreview(
+    modifier: Modifier = Modifier,
+    contentDescription: String,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = modifier
+            .aspectRatio(1f)
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.wood_frame_preview),
+            contentDescription = null,
+            modifier = Modifier.fillMaxSize(),
+            contentScale = ContentScale.Fit,
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.62f)
+                .fillMaxHeight(0.52f)
+                .clip(RoundedCornerShape(3.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            content()
+        }
+    }
+}
+
+@Composable
 internal fun MediaCard(
     media: MediaItem,
     current: Boolean,
@@ -441,9 +451,17 @@ internal fun MediaCard(
             .pressFeedbackClickable(enabled = enabled, onClick = onClick),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
     ) {
-        SavedMediaPreview(media, Modifier.fillMaxWidth())
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(180.dp)
+                .background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center,
+        ) {
+            SavedMediaPreview(media, Modifier.fillMaxSize(), constrained = true)
+        }
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(media.displayName, style = MaterialTheme.typography.titleMedium)
+            Text(media.displayName, style = MaterialTheme.typography.titleMedium, maxLines = 1)
             Text(
                 when {
                     current -> "当前显示"
@@ -458,7 +476,11 @@ internal fun MediaCard(
 }
 
 @Composable
-internal fun SavedMediaPreview(media: MediaItem, modifier: Modifier = Modifier) {
+internal fun SavedMediaPreview(
+    media: MediaItem,
+    modifier: Modifier = Modifier,
+    constrained: Boolean = false,
+) {
     val context = LocalContext.current
     val bitmap by produceState<Bitmap?>(initialValue = null, media.previewUri) {
         value = media.previewUri?.let { previewUri ->
@@ -470,22 +492,36 @@ internal fun SavedMediaPreview(media: MediaItem, modifier: Modifier = Modifier) 
             }
         }
     }
+    val isPortrait = media.orientation == MediaOrientation.Portrait
+    val previewAspectRatio = media.previewAspectRatio(isPortrait)
+    val previewModifier = if (constrained) modifier else modifier.aspectRatio(previewAspectRatio)
     if (bitmap == null) {
-        DemoArtwork(
-            seed = media.id.value.hashCode(),
-            description = "${media.displayName}预览",
-            modifier = modifier,
-            presentation = ArtworkPresentation.DeviceCanvas,
-            sourceAspectRatio = media.sourceWidthPx.toFloat() / media.sourceHeightPx,
-        )
+        Box(previewModifier, contentAlignment = Alignment.Center) {
+            DemoArtwork(
+                seed = media.id.value.hashCode(),
+                description = "${media.displayName}预览",
+                modifier = Modifier.fillMaxWidth(),
+                presentation = ArtworkPresentation.SourceAspect,
+                sourceAspectRatio = previewAspectRatio,
+            )
+        }
     } else {
+        val displayBitmap = remember(bitmap, isPortrait) {
+            if (isPortrait && bitmap!!.width > bitmap!!.height) bitmap!!.rotateQuarterTurns(3) else bitmap!!
+        }
         Image(
-            bitmap = bitmap!!.asImageBitmap(),
+            bitmap = displayBitmap.asImageBitmap(),
             contentDescription = "${media.displayName}预览",
-            contentScale = ContentScale.Crop,
-            modifier = modifier.aspectRatio(media.sourceWidthPx.toFloat() / media.sourceHeightPx),
+            contentScale = if (constrained) ContentScale.Fit else ContentScale.Crop,
+            modifier = previewModifier,
         )
     }
+}
+
+private fun MediaItem.previewAspectRatio(isPortrait: Boolean): Float {
+    val shortSide = minOf(sourceWidthPx, sourceHeightPx).coerceAtLeast(1)
+    val longSide = maxOf(sourceWidthPx, sourceHeightPx).coerceAtLeast(1)
+    return if (isPortrait) shortSide.toFloat() / longSide else longSide.toFloat() / shortSide
 }
 
 @Composable

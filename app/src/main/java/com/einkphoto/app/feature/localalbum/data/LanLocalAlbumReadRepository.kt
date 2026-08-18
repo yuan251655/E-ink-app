@@ -377,11 +377,18 @@ class LanLocalAlbumReadRepository(
         availability = MediaAvailability.Ready,
         createdAtEpochMillis = createdAtEpochMillis,
         revision = revision,
-        orientation = if (displayProfile.orientation == "portrait") MediaOrientation.Portrait else MediaOrientation.Landscape,
+        orientation = userVisibleMediaOrientation(displayProfile.orientation, displayProfile.rotationDegrees),
     )
 
     private companion object {
         const val PREVIEW_LOG_TAG = "EInkLocalAlbum"
         val terminalJobStates = setOf(DeviceJobState.Success, DeviceJobState.Failed, DeviceJobState.Cancelled, DeviceJobState.TimedOut)
     }
+}
+
+internal fun userVisibleMediaOrientation(rawOrientation: String, rotationDegrees: Int): MediaOrientation {
+    val raw = if (rawOrientation == "portrait") MediaOrientation.Portrait else MediaOrientation.Landscape
+    val quarterTurn = Math.floorMod(rotationDegrees, 180) == 90
+    if (!quarterTurn) return raw
+    return if (raw == MediaOrientation.Portrait) MediaOrientation.Landscape else MediaOrientation.Portrait
 }

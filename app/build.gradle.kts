@@ -34,8 +34,8 @@ android {
         applicationId = "com.einkphoto.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 24
-        versionName = "2.0.6"
+        versionCode = 25
+        versionName = "2.0.7"
         buildConfigField("String", "APP_UPDATE_MANIFEST_URL", "\"$appUpdateManifestUrl\"")
     }
 

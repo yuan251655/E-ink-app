@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "2.0.6",
-  "version_code": 24,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.6/eink-photo-v2.0.6.apk",
-  "sha256": "f74ae66d8b3916f436e1ab81c9d37b960986c22837a7969d0461faacafd021f3",
-  "size_bytes": 12995751,
-  "release_notes": "相念 v2.0.6：本地相册导入支持手机相册分类、多选，已存储图片支持横屏/竖屏筛选，并优化相框预览方向。",
+  "version_name": "2.0.7",
+  "version_code": 25,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.7/eink-photo-v2.0.7.apk",
+  "sha256": "7c2d921e19aad7b5546b1e4e3dc71dcac9a3ab74484816111fb91f45121f20b7",
+  "size_bytes": 14510091,
+  "release_notes": "相念 v2.0.7：修复设备图片方向判断，横屏/竖屏按 ESP 最终显示方向展示，并统一图片卡片预览高度与对齐。",
   "force_update": false,
   "min_supported_version_code": 1
 }
