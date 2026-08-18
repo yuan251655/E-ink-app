@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "2.0.3",
-  "version_code": 21,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.3/eink-photo-v2.0.3.apk",
-  "sha256": "b87c42238fd2fe88bdc0278eb91156cabfac61bb9252c583ea63c636e6a659b9",
+  "version_name": "2.0.4",
+  "version_code": 22,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.4/eink-photo-v2.0.4.apk",
+  "sha256": "6b07bc3b6369e7b2b86c7b0e90298115fbb264cfaac89fcce97d859a4139c953",
   "size_bytes": 12979295,
-  "release_notes": "相念 v2.0.3：重新设计网络配置，支持保存、切换和删除历史 Wi-Fi；并优化 AP/STA 切换后的自动恢复连接。",
+  "release_notes": "相念 v2.0.4：更新正式版本构建并修正版本信息。",
   "force_update": false,
   "min_supported_version_code": 1
 }
