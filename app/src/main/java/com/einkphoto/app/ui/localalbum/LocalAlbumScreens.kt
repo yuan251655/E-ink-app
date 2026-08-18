@@ -406,7 +406,7 @@ internal fun PhoneImportScreen(
     onSelectSource: (String) -> Unit,
     onNext: () -> Unit,
 ) {
-    ScreenList("从手机导入", "使用 Android 系统照片选择器", onBack) {
+    ScreenList("从手机相册导入", "可从系统相册一次选择多张照片", onBack) {
         item {
             OutlinedCard {
                 Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {

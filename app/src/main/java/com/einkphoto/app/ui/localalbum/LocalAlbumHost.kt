@@ -78,7 +78,9 @@ fun LocalAlbumHost(
     val back: () -> Unit = { if (backStack.size > 1) backStack.removeAt(backStack.lastIndex) }
     val backToOverview: () -> Unit = { backStack.clear(); backStack.add(LocalAlbumRoute.Overview) }
     val photoPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickMultipleVisualMedia(maxItems = 5),
+        // Keep Android's photo/albums UI, but do not pass the old app-side limit of five.
+        // The system picker applies the platform maximum when no custom limit is supplied.
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
     ) { uris ->
         scope.launch {
             val imported = withContext(Dispatchers.IO) {

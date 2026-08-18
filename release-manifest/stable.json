@@ -1,12 +1,12 @@
 {
   "channel": "stable",
   "package_name": "com.einkphoto.app",
-  "version_name": "2.0.4",
-  "version_code": 22,
-  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.4/eink-photo-v2.0.4.apk",
-  "sha256": "6b07bc3b6369e7b2b86c7b0e90298115fbb264cfaac89fcce97d859a4139c953",
+  "version_name": "2.0.5",
+  "version_code": 23,
+  "apk_url": "http://107.173.157.41:3000/yj/E-ink-APP/releases/download/v2.0.5/eink-photo-v2.0.5.apk",
+  "sha256": "6db56b0b78c39cd6eb1567747bb0408ed2983b01587cf7c8bb36936357553758",
   "size_bytes": 12979295,
-  "release_notes": "相念 v2.0.4：更新正式版本构建并修正版本信息。",
+  "release_notes": "相念 v2.0.5：本地相册导入支持系统相册多选，不再限制 5 张照片。",
   "force_update": false,
   "min_supported_version_code": 1
 }
